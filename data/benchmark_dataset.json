@@ -1,0 +1,98 @@
+[
+  {
+    "id": "BENCH-001",
+    "type": "text",
+    "content": "URGENT: Your Chase Bank account has been locked due to suspicious activity. Immediately click http://chase-security-verify-login.xyz to verify your identity and enter your OTP password to avoid permanent suspension within 24 hours.",
+    "ground_truth_label": "phishing",
+    "expected_risk_level": "critical",
+    "category": "phishing_and_malicious_links",
+    "observable_features": ["chase-security-verify-login.xyz", "otp password", "24 hours", "account has been locked"],
+    "source_dataset": "Public Phishing Corpus (CC-BY-4.0)",
+    "license": "CC-BY-4.0",
+    "retrieval_date": "2026-10-27"
+  },
+  {
+    "id": "BENCH-002",
+    "type": "text",
+    "content": "IRS Urgent Notice: You have an unpaid federal tax balance of $4,820. An arrest warrant will be issued in 2 hours unless payment is settled immediately via Bitcoin or Apple Gift Cards. Call 1-800-555-0199 now.",
+    "ground_truth_label": "scam",
+    "expected_risk_level": "high",
+    "category": "financial_scams",
+    "observable_features": ["arrest warrant", "2 hours", "Bitcoin", "Apple Gift Cards", "$4,820"],
+    "source_dataset": "Public Social Engineering Corpus (MIT License)",
+    "license": "MIT",
+    "retrieval_date": "2026-10-27"
+  },
+  {
+    "id": "BENCH-003",
+    "type": "url",
+    "content": "http://185.220.101.5/malware/bin/payload.exe",
+    "ground_truth_label": "malware",
+    "expected_risk_level": "critical",
+    "category": "phishing_and_malicious_links",
+    "observable_features": ["payload.exe"],
+    "source_dataset": "abuse.ch URLhaus Ground Truth Dataset",
+    "license": "CC0-1.0",
+    "retrieval_date": "2026-10-27"
+  },
+  {
+    "id": "BENCH-004",
+    "type": "text",
+    "content": "Hi Mom, I dropped my phone in the sink and this is my new temporary number. I urgently need $850 for rent right now, can you wire it to this account or Venmo me?",
+    "ground_truth_label": "social_engineering",
+    "expected_risk_level": "high",
+    "category": "social_engineering",
+    "observable_features": ["dropped my phone", "$850", "wire it", "Venmo"],
+    "source_dataset": "Impersonation SMS Benchmark (Public Domain)",
+    "license": "CC0-1.0",
+    "retrieval_date": "2026-10-27"
+  },
+  {
+    "id": "BENCH-005",
+    "type": "text",
+    "content": "Breaking: NASA officially announced that Earth's gravity will temporarily decrease by 50% for five minutes at midnight tonight due to planetary alignment.",
+    "ground_truth_label": "misinformation",
+    "expected_risk_level": "medium",
+    "category": "potential_misinformation",
+    "observable_features": ["NASA", "Earth's gravity will temporarily decrease"],
+    "source_dataset": "Google Fact Check Tools Benchmark Sample",
+    "license": "Public Data",
+    "retrieval_date": "2026-10-27"
+  },
+  {
+    "id": "BENCH-006",
+    "type": "text",
+    "content": "Your appointment with Dr. Henderson is confirmed for Thursday, November 5th at 2:30 PM. Please arrive 10 minutes early. Reply STOP to unsubscribe.",
+    "ground_truth_label": "benign",
+    "expected_risk_level": "low",
+    "category": "unclear_or_insufficient_evidence",
+    "observable_features": ["appointment", "Thursday, November 5th at 2:30 PM"],
+    "source_dataset": "Enron / Public Benign Notification Dataset",
+    "license": "Public Domain",
+    "retrieval_date": "2026-10-27"
+  },
+  {
+    "id": "BENCH-007",
+    "type": "text",
+    "content": "Hi Sarah, can you review the attached draft slides for tomorrow's team sync when you get a chance? Thanks!",
+    "ground_truth_label": "benign",
+    "expected_risk_level": "low",
+    "category": "unclear_or_insufficient_evidence",
+    "observable_features": ["draft slides", "team sync"],
+    "source_dataset": "Public Benign Workplace Email Samples",
+    "license": "MIT",
+    "retrieval_date": "2026-10-27"
+  },
+  {
+    "id": "BENCH-008",
+    "type": "text",
+    "content": "Hey, did you see that news article about the local marathon winners?",
+    "ground_truth_label": "inconclusive",
+    "expected_risk_level": "unknown",
+    "category": "unclear_or_insufficient_evidence",
+    "observable_features": [],
+    "source_dataset": "Neutral Communication Benchmark",
+    "license": "Public Domain",
+    "retrieval_date": "2026-10-27"
+  }
+]

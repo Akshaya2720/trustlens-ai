@@ -1,0 +1,65 @@
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trustlens_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=postgresql+asyncpg://trustlens_user:trustlens_pass@postgres:5432/trustlens_db
+      - REDIS_URL=redis://redis:6379/0
+      - MODEL_API_KEY=${MODEL_API_KEY}
+      - META_BASE_URL=${META_BASE_URL:-https://api.meta.ai/v1}
+      - META_MODEL_ID=${META_MODEL_ID:-muse-spark-1.3}
+      - META_VOICE_MODEL_ID=${META_VOICE_MODEL_ID:-muse-voice-transcribe-1.0}
+      - VIRUSTOTAL_API_KEY=${VIRUSTOTAL_API_KEY}
+      - GOOGLE_FACTCHECK_API_KEY=${GOOGLE_FACTCHECK_API_KEY}
+      - PHISHTANK_API_KEY=${PHISHTANK_API_KEY}
+      - URLHAUS_API_KEY=${URLHAUS_API_KEY}
+      - SECRET_KEY=${SECRET_KEY:-trustlens-master-secret-key-change-in-prod}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: trustlens_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: trustlens_user
+      POSTGRES_PASSWORD: trustlens_pass
+      POSTGRES_DB: trustlens_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trustlens_user -d trustlens_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: trustlens_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+
+volumes:
+  pgdata:
+  redisdata:
