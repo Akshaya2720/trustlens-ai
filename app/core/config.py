@@ -71,6 +71,19 @@ class Settings(BaseSettings):
         "audio/aac",
     ]
 
+    # Image Security & Processing Limits
+    MAX_IMAGE_WIDTH: int = 8192
+    MAX_IMAGE_HEIGHT: int = 8192
+    MAX_IMAGE_PIXELS: int = 100_000_000  # Pillow DecompressionBomb protection
+    STRIP_IMAGE_METADATA: bool = True
+    IMAGE_RETENTION_ENABLED: bool = False
+    IMAGE_STORAGE_DIR: str = "./uploads"
+
+    # OCR Configuration
+    OCR_ENGINE: str = "auto"  # "auto", "rapidocr", "tesseract"
+    OCR_MIN_CONFIDENCE_THRESHOLD: float = 0.50
+    TESSERACT_CMD: Optional[str] = None
+
     # Data Retention & Privacy
     RETENTION_DAYS: int = 30
     ENABLE_AUDIT_LOGGING: bool = True

@@ -45,6 +45,9 @@ class DeterministicRiskEngine:
         claim_verification: Optional[ClaimVerificationOutput] = None,
         evidence_records: Optional[List[NormalizedEvidenceRecord]] = None,
         provider_statuses: Optional[Dict[str, str]] = None,
+        discrepancies: Optional[List[str]] = None,
+        ocr_confidence: Optional[float] = None,
+        is_ocr_uncertain: bool = False,
     ) -> RiskAssessmentSchema:
         score = 0.0
         indicators: List[str] = []
@@ -55,6 +58,7 @@ class DeterministicRiskEngine:
         has_confirmed_malicious = False
         evidence_records = evidence_records or []
         provider_statuses = provider_statuses or {}
+        discrepancies = discrepancies or []
 
         # 1. Threat Intelligence Rules
         if threat_intel:
@@ -152,7 +156,11 @@ class DeterministicRiskEngine:
         # Normalize score within [0, 100]
         score = min(100.0, max(0.0, score))
 
-        # 6. Contradiction Detection
+        # 6. Contradiction Detection & Discrepancies
+        for d in discrepancies:
+            contradictions.append(f"Model-OCR Extraction Discrepancy: {d}")
+            indicators.append(f"Observable Extraction Inconsistency: {d}")
+
         # Check if URL reputation is clean but scam text is aggressive
         clean_url_providers = [
             ev.provider_name for ev in evidence_records
@@ -164,7 +172,13 @@ class DeterministicRiskEngine:
                 "yet the text exhibits clear credential-harvesting patterns (suggests brand new zero-day phishing or unindexed lure)."
             )
 
-        # 7. Limitations Tracking
+        # 7. Limitations & OCR Uncertainty Tracking
+        if is_ocr_uncertain or (ocr_confidence is not None and ocr_confidence < 0.5):
+            conf_str = f"{ocr_confidence:.2f}" if ocr_confidence is not None else "uncertain"
+            limitations.append(
+                f"OCR text extraction had low confidence ({conf_str}); image may contain noisy, rotated, or low-resolution text."
+            )
+
         for prov_name, st in provider_statuses.items():
             if st == ProviderStatus.NOT_CONFIGURED.value:
                 limitations.append(f"{prov_name} API is not configured; check was bypassed.")
@@ -204,6 +218,9 @@ class DeterministicRiskEngine:
             base_conf = 0.85
         elif risk_level == "medium":
             base_conf = 0.70
+
+        if is_ocr_uncertain and not has_confirmed_malicious:
+            base_conf = max(0.3, base_conf * 0.85)
 
         confidence = round(min(1.0, base_conf * evidence_coverage), 2)
 

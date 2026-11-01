@@ -44,6 +44,9 @@ class RiskSynthesisAgent:
         claim_verification: Optional[ClaimVerificationOutput] = None,
         evidence_records: Optional[List[NormalizedEvidenceRecord]] = None,
         provider_statuses: Optional[Dict[str, str]] = None,
+        discrepancies: Optional[List[str]] = None,
+        ocr_confidence: Optional[float] = None,
+        is_ocr_uncertain: bool = False,
     ) -> tuple[RiskSynthesisOutput, RiskAssessmentSchema]:
         # Step 1: Run deterministic risk engine first to calculate ground truth risk level & score
         assessment = DeterministicRiskEngine.calculate_risk(
@@ -53,6 +56,9 @@ class RiskSynthesisAgent:
             claim_verification=claim_verification,
             evidence_records=evidence_records,
             provider_statuses=provider_statuses,
+            discrepancies=discrepancies,
+            ocr_confidence=ocr_confidence,
+            is_ocr_uncertain=is_ocr_uncertain,
         )
 
         # Baseline synthesis output

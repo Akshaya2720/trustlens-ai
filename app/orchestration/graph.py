@@ -33,8 +33,14 @@ async def normalize_content_node(state: InvestigationState) -> Dict[str, Any]:
     """Step 2: Normalizes content, processes images/audio if provided, and extracts entities."""
     logger.info(f"[{state['investigation_id']}] Running Normalize Content Node (Input: {state.get('input_type')})")
     text = state.get("raw_text") or ""
-    extracted_entities = state.get("extracted_entities") or []
-    extracted_urls = state.get("extracted_urls") or []
+    extracted_entities = list(state.get("extracted_entities") or [])
+    extracted_urls = list(state.get("extracted_urls") or [])
+    extracted_claims = list(state.get("extracted_claims") or [])
+    agent_findings = dict(state.get("agent_findings") or {})
+    ocr_text = state.get("ocr_text")
+    ocr_confidence = state.get("ocr_confidence")
+    is_ocr_uncertain = state.get("is_ocr_uncertain", False)
+    discrepancies = list(state.get("extraction_discrepancies") or [])
 
     # Handle image input
     if state.get("image_bytes"):
@@ -43,8 +49,31 @@ async def normalize_content_node(state: InvestigationState) -> Dict[str, Any]:
                 image_bytes=state["image_bytes"],
                 filename=state.get("filename", "upload.png"),
                 mime_type=state.get("mime_type", "image/png"),
+                context_notes=state.get("context_notes"),
+                sender_hint=state.get("sender_hint"),
             )
-            text += f"\n[Extracted Visual & OCR Content]:\n{img_res.extracted_text}"
+            text += f"\n\n[Reconciled Visual & OCR Content]:\n{img_res.extracted_text}"
+            ocr_text = img_res.ocr_result.raw_text
+            ocr_confidence = img_res.ocr_result.confidence
+            is_ocr_uncertain = img_res.ocr_result.is_low_confidence
+            discrepancies.extend(img_res.discrepancies)
+            agent_findings["image_analysis"] = img_res.model_dump(mode="json")
+
+            # Merge URLs from image analysis
+            for u in img_res.extracted_urls:
+                if u not in extracted_urls:
+                    extracted_urls.append(u)
+
+            # Merge entities from image analysis
+            for ent in img_res.extracted_entities:
+                if ent["value"] not in [e.get("value") for e in extracted_entities]:
+                    extracted_entities.append(ent)
+
+            # Merge claims from image analysis
+            for clm in img_res.extracted_claims:
+                if clm["claim_text"] not in [c.get("claim_text") for c in extracted_claims]:
+                    extracted_claims.append(clm)
+
         except Exception as e:
             logger.warning(f"Image processing error: {e}")
 
@@ -79,6 +108,12 @@ async def normalize_content_node(state: InvestigationState) -> Dict[str, Any]:
         "raw_text": text.strip(),
         "extracted_entities": extracted_entities,
         "extracted_urls": extracted_urls,
+        "extracted_claims": extracted_claims,
+        "agent_findings": agent_findings,
+        "ocr_text": ocr_text,
+        "ocr_confidence": ocr_confidence,
+        "is_ocr_uncertain": is_ocr_uncertain,
+        "extraction_discrepancies": discrepancies,
     }
 
 
@@ -241,9 +276,25 @@ async def synthesize_findings_node(state: InvestigationState) -> Dict[str, Any]:
         claim_verification=claim_verification,
         evidence_records=ev_records,
         provider_statuses=provider_statuses,
+        discrepancies=state.get("extraction_discrepancies", []),
+        ocr_confidence=state.get("ocr_confidence"),
+        is_ocr_uncertain=state.get("is_ocr_uncertain", False),
     )
 
     findings["risk_synthesis"] = synth_output.model_dump(mode="json")
+
+    # Compute verified vs unverified claims
+    verified_claims = []
+    unverified_claims = []
+    if claim_verification:
+        for rec in claim_verification.records:
+            if rec.raw_status in ("ok", "confirmed_match") and not rec.error_message:
+                verified_claims.append(f"{rec.query_target}: {rec.threat_description or 'Verified'}")
+            else:
+                unverified_claims.append(rec.query_target)
+    else:
+        for c in state.get("extracted_claims", []):
+            unverified_claims.append(c.get("claim_text", "") if isinstance(c, dict) else str(c))
 
     return {
         "agent_findings": findings,
@@ -252,6 +303,8 @@ async def synthesize_findings_node(state: InvestigationState) -> Dict[str, Any]:
         "final_risk_score": assessment.risk_score,
         "confidence": assessment.confidence,
         "summary": synth_output.model_explanation,
+        "verified_claims": verified_claims,
+        "unverified_claims": unverified_claims,
         "status": "completed",
     }
 

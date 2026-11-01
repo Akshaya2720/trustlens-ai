@@ -70,6 +70,9 @@ class InvestigationReportResponse(BaseModel):
     investigation_id: str
     status: str
     input_type: str
+    input_types: List[str] = Field(default_factory=list)
+    overall_risk: str = "unknown"
+    classification_labels: List[str] = Field(default_factory=list)
     categories: List[str] = Field(default_factory=list)
     final_risk_level: str
     final_risk_score: float
@@ -79,13 +82,24 @@ class InvestigationReportResponse(BaseModel):
     model_id: Optional[str] = None
     created_at: datetime
     completed_at: Optional[datetime] = None
+    analysis_timestamp: Optional[datetime] = None
 
     # Granular artifacts and evidence
+    ocr_text: Optional[str] = None
+    extracted_urls: List[str] = Field(default_factory=list)
+    observed_indicators: List[str] = Field(default_factory=list)
+    extraction_discrepancies: List[str] = Field(default_factory=list)
+    verified_claims: List[str] = Field(default_factory=list)
+    unverified_claims: List[str] = Field(default_factory=list)
+    recommended_actions: List[str] = Field(default_factory=list)
+    limitations: List[str] = Field(default_factory=list)
+
     artifacts: List[ArtifactSummary] = Field(default_factory=list)
     extracted_entities: List[ExtractedEntitySummary] = Field(default_factory=list)
     extracted_claims: List[str] = Field(default_factory=list)
     provider_statuses: List[ProviderStatusItem] = Field(default_factory=list)
     evidence: List[EvidenceItem] = Field(default_factory=list)
+    evidence_sources: List[EvidenceItem] = Field(default_factory=list)
     agent_findings: Dict[str, Any] = Field(default_factory=dict)
     risk_assessment: Optional[RiskAssessmentSchema] = None
 

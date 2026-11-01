@@ -83,3 +83,55 @@ class RiskSynthesisOutput(BaseModel):
     missing_evidence: List[str] = Field(default_factory=list)
     model_explanation: str = ""
     recommended_actions: List[str] = Field(default_factory=list)
+
+
+class MetaVisionAnalysisSchema(BaseModel):
+    """Structured output from Meta Multimodal Vision model (Muse Spark 1.3)."""
+    apparent_purpose: str = Field(..., description="Apparent purpose or topic of the message or screenshot")
+    visible_elements: List[str] = Field(default_factory=list, description="Visibly present UI elements, headers, logos, or raw text directly observed")
+    inferred_context: List[str] = Field(default_factory=list, description="Contextual inferences made by the model, clearly separated from visual observations")
+    suspicious_instructions: List[str] = Field(default_factory=list, description="Suspicious instructions, urgency triggers, or calls to action")
+    claimed_sender_or_organization: Optional[str] = Field(None, description="Organization, brand, or entity claimed or depicted in the image")
+    visible_urls: List[str] = Field(default_factory=list, description="URLs or domain names visibly displayed in the image")
+    payment_or_credential_requests: List[str] = Field(default_factory=list, description="Explicit requests for credentials, passwords, OTPs, wire transfers, or crypto")
+    impersonation_indicators: List[str] = Field(default_factory=list, description="Visual indicators suggestive of impersonation or UI spoofing")
+    claims_requiring_verification: List[str] = Field(default_factory=list, description="Factual claims (e.g. government notice, fine, prize, legal threat) that require external verification")
+    ambiguities_and_limitations: List[str] = Field(default_factory=list, description="Unclear or low-resolution elements, cropped context, or uncertainty")
+    raw_summary: str = Field(..., description="Factual, non-speculative summary of observable visual elements")
+
+
+class OCRExtractionResult(BaseModel):
+    """Structured output from OCR extraction engine (RapidOCR / Tesseract)."""
+    raw_text: str = ""
+    confidence: float = 0.0  # 0.0 to 1.0 (mean word/line confidence)
+    min_confidence: float = 0.0
+    word_count: int = 0
+    lines: List[Dict[str, Any]] = Field(default_factory=list)
+    detected_urls: List[str] = Field(default_factory=list)
+    detected_emails: List[str] = Field(default_factory=list)
+    detected_phones: List[str] = Field(default_factory=list)
+    detected_payment_terms: List[str] = Field(default_factory=list)
+    detected_warnings: List[str] = Field(default_factory=list)
+    claimed_organizations: List[str] = Field(default_factory=list)
+    detected_timestamps: List[str] = Field(default_factory=list)
+    is_low_confidence: bool = False
+    engine_used: str = "none"
+    engine_status: str = "ok"  # "ok", "low_confidence", "empty", "error", "unavailable"
+
+
+class ReconciledImageAnalysis(BaseModel):
+    """Reconciles OCR extraction with Meta AI multimodal vision analysis."""
+    all_urls: List[str] = Field(default_factory=list)
+    urls_corroborated: List[str] = Field(default_factory=list)
+    urls_ocr_only: List[str] = Field(default_factory=list)
+    urls_meta_only: List[str] = Field(default_factory=list)
+    discrepancies: List[str] = Field(default_factory=list)
+    ambiguous_regions: List[str] = Field(default_factory=list)
+    claims_to_verify: List[str] = Field(default_factory=list)
+    primary_organization: Optional[str] = None
+    organization_source: str = "none"  # "both", "ocr", "meta", "none"
+    reconciled_text: str = ""
+    ocr_confidence: Optional[float] = None
+    is_ocr_uncertain: bool = False
+    image_sha256: str = ""
+    reconciliation_notes: List[str] = Field(default_factory=list)

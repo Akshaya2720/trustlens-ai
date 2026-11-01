@@ -11,7 +11,7 @@ from app.api.deps import get_repository
 from app.clients.meta_client import meta_client
 from app.core.config import settings
 from app.core.logging import logger
-from app.core.security import compute_sha256, verify_api_key
+from app.core.security import compute_sha256, validate_image_bytes, verify_api_key
 from app.db.models import Investigation
 from app.db.repository import InvestigationRepository
 from app.orchestration.graph import execute_investigation_workflow
@@ -101,10 +101,53 @@ def map_investigation_to_response(inv: Investigation) -> InvestigationReportResp
             generated_at=inv.risk_assessment.generated_at,
         )
 
+    # Collect extracted URLs
+    extracted_urls = []
+    for e in inv.entities:
+        if e.entity_type == "url" and e.value not in extracted_urls:
+            extracted_urls.append(e.value)
+    for ev in inv.external_evidence:
+        if ev.query_type == "url" and ev.query_target not in extracted_urls:
+            extracted_urls.append(ev.query_target)
+
+    # Collect OCR text from artifacts or findings
+    ocr_text = None
+    for a in inv.artifacts:
+        if a.ocr_text:
+            ocr_text = a.ocr_text
+            break
+
+    # Extract discrepancies from agent findings or contradictions
+    discrepancies = []
+    if "image_analysis" in agent_findings_dict and isinstance(agent_findings_dict["image_analysis"], dict):
+        img_findings = agent_findings_dict["image_analysis"]
+        discrepancies.extend(img_findings.get("discrepancies", []))
+    if inv.risk_assessment and inv.risk_assessment.contradictions:
+        for c in inv.risk_assessment.contradictions:
+            if "Discrepancy" in c and c not in discrepancies:
+                discrepancies.append(c)
+
+    # Verified vs Unverified claims
+    verified_claims = []
+    unverified_claims = []
+    for clm in inv.claims:
+        has_ev = any(ev.query_type == "claim" and ev.query_target == clm.claim_text for ev in inv.external_evidence)
+        if has_ev:
+            verified_claims.append(clm.claim_text)
+        else:
+            unverified_claims.append(clm.claim_text)
+
+    observed_indicators = inv.risk_assessment.indicators if inv.risk_assessment and inv.risk_assessment.indicators else []
+    recommended_actions = inv.risk_assessment.recommendations if inv.risk_assessment and inv.risk_assessment.recommendations else []
+    limitations = inv.risk_assessment.limitations if inv.risk_assessment and inv.risk_assessment.limitations else []
+
     return InvestigationReportResponse(
         investigation_id=inv.id,
         status=inv.status,
         input_type=inv.input_type,
+        input_types=[inv.input_type] if inv.input_type else ["image"],
+        overall_risk=inv.final_risk_level or "unknown",
+        classification_labels=inv.categories or [],
         categories=inv.categories or [],
         final_risk_level=inv.final_risk_level or "unknown",
         final_risk_score=inv.final_risk_score or 0.0,
@@ -114,11 +157,21 @@ def map_investigation_to_response(inv: Investigation) -> InvestigationReportResp
         model_id=inv.model_id,
         created_at=inv.created_at,
         completed_at=inv.updated_at,
+        analysis_timestamp=inv.updated_at or inv.created_at,
+        ocr_text=ocr_text,
+        extracted_urls=extracted_urls,
+        observed_indicators=observed_indicators,
+        extraction_discrepancies=discrepancies,
+        verified_claims=verified_claims,
+        unverified_claims=unverified_claims,
+        recommended_actions=recommended_actions,
+        limitations=limitations,
         artifacts=artifacts,
         extracted_entities=entities,
         extracted_claims=claims,
         provider_statuses=provider_statuses,
         evidence=evidence_items,
+        evidence_sources=evidence_items,
         agent_findings=agent_findings_dict,
         risk_assessment=risk_assessment,
     )
@@ -309,12 +362,6 @@ async def investigate_image(
     _user: str = Depends(verify_api_key),
 ):
     """Investigates a submitted screenshot or image using Meta multimodal vision and OCR."""
-    if file.content_type not in settings.ALLOWED_IMAGE_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=f"Unsupported image type '{file.content_type}'. Allowed types: {settings.ALLOWED_IMAGE_TYPES}",
-        )
-
     content = await file.read()
     if len(content) > settings.MAX_UPLOAD_SIZE_BYTES:
         raise HTTPException(
@@ -322,13 +369,20 @@ async def investigate_image(
             detail=f"File exceeds maximum upload size of {settings.MAX_UPLOAD_SIZE_BYTES} bytes",
         )
 
+    # Secure image validation (magic bytes, decompression limits, dimensions, metadata strip)
+    img_fmt, detected_mime, width, height, sanitized_content = validate_image_bytes(
+        content,
+        allowed_types=settings.ALLOWED_IMAGE_TYPES,
+        max_size_bytes=settings.MAX_UPLOAD_SIZE_BYTES,
+    )
+
     inv_id = str(uuid.uuid4())
-    img_hash = compute_sha256(content)
+    img_hash = compute_sha256(sanitized_content)
 
     await repo.create_investigation(
         investigation_id=inv_id,
         input_type="image",
-        raw_input_preview=f"Image upload: {file.filename} ({len(content)} bytes)",
+        raw_input_preview=f"Image upload: {file.filename} ({len(sanitized_content)} bytes, {width}x{height} {img_fmt})",
         model_id=settings.META_MODEL_ID,
     )
 
@@ -336,8 +390,8 @@ async def investigate_image(
         investigation_id=inv_id,
         artifact_type="image",
         filename=file.filename,
-        mime_type=file.content_type,
-        file_size=len(content),
+        mime_type=detected_mime,
+        file_size=len(sanitized_content),
         sha256_hash=img_hash,
     )
 
@@ -347,9 +401,9 @@ async def investigate_image(
         "raw_text": f"Screenshot filename: {file.filename}\nContext: {context_notes or 'None'}",
         "sender_hint": sender_hint,
         "context_notes": context_notes,
-        "image_bytes": content,
+        "image_bytes": sanitized_content,
         "filename": file.filename,
-        "mime_type": file.content_type,
+        "mime_type": detected_mime,
         "extracted_entities": [],
         "extracted_claims": [],
         "extracted_urls": [],
@@ -362,6 +416,11 @@ async def investigate_image(
     }
 
     final_state = await execute_investigation_workflow(state)
+
+    # Update artifact record with extracted OCR text if available
+    if final_state.get("ocr_text"):
+        await repo.update_artifact_ocr(inv_id, final_state["ocr_text"])
+
     saved_inv = await persist_investigation_state(repo, final_state)
     return map_investigation_to_response(saved_inv)
 

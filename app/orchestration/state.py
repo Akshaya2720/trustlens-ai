@@ -18,6 +18,12 @@ class InvestigationState(TypedDict, total=False):
     mime_type: Optional[str]
 
     # Normalized Content & Entities
+    ocr_text: Optional[str]
+    ocr_confidence: Optional[float]
+    is_ocr_uncertain: Optional[bool]
+    extraction_discrepancies: List[str]
+    verified_claims: List[str]
+    unverified_claims: List[str]
     extracted_entities: List[Dict[str, Any]]
     extracted_claims: List[Dict[str, Any]]
     extracted_urls: List[str]

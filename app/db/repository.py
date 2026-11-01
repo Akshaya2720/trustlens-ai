@@ -96,6 +96,21 @@ class InvestigationRepository:
         await self.db.flush()
         return art
 
+    async def update_artifact_ocr(
+        self,
+        investigation_id: str,
+        ocr_text: str,
+    ) -> None:
+        stmt = (
+            select(Artifact)
+            .where(Artifact.investigation_id == investigation_id, Artifact.artifact_type == "image")
+        )
+        res = await self.db.execute(stmt)
+        art = res.scalar_one_or_none()
+        if art:
+            art.ocr_text = ocr_text
+            await self.db.flush()
+
     async def add_extracted_entities(
         self,
         investigation_id: str,

@@ -287,6 +287,40 @@ class MetaModelClient:
                 details={"raw_content": content},
             )
 
+    async def analyze_image_structured(
+        self,
+        image_bytes: bytes,
+        mime_type: str,
+        prompt: str,
+        schema: Type[T],
+        temperature: float = 0.1,
+    ) -> tuple[T, MetaResponseMetadata]:
+        """Analyzes an image using Meta Muse Spark multimodal reasoning with structured schema validation."""
+        if not self.is_configured:
+            raise MetaAuthError(
+                "MODEL_API_KEY is not configured for image analysis.",
+                status_code=401,
+            )
+
+        b64_data = base64.b64encode(image_bytes).decode("utf-8")
+        data_uri = f"data:{mime_type};base64,{b64_data}"
+
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": data_uri}},
+                ],
+            }
+        ]
+
+        return await self.generate_structured(
+            messages=messages,
+            schema=schema,
+            temperature=temperature,
+        )
+
     async def transcribe_audio(
         self,
         audio_bytes: bytes,
