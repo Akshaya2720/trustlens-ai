@@ -175,11 +175,24 @@ class DeterministicRiskEngine:
                 indicators.append(
                     f"Independent fact-checking sources have debunked {claim_verification.debunked_claims_count} claim(s) as false or misleading."
                 )
+            if claim_verification.verified_true_count > 0:
+                score = max(0.0, score - 20.0)
+                indicators.append(
+                    f"Verified authentic: {claim_verification.verified_true_count} claim(s) confirmed by authoritative sources."
+                )
+            if claim_verification.unverified_claims_count > 0:
+                limitations.append(
+                    f"{claim_verification.unverified_claims_count} claim(s) lack authoritative third-party fact-checking records and remain unverified."
+                )
 
         # 5. Cap and Floor Logic
         # Rule: A confirmed malicious record strictly prevents risk from dropping below HIGH (min 70 score)
         if has_confirmed_malicious:
             score = max(score, 70.0)
+
+        # Rule: A debunked false claim strictly prevents risk from dropping below HIGH (min 65 score)
+        if claim_verification and claim_verification.debunked_claims_count > 0:
+            score = max(score, 65.0)
 
         # Normalize score within [0, 100]
         score = min(100.0, max(0.0, score))

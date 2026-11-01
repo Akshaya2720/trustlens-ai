@@ -37,6 +37,7 @@ class InvestigationState(TypedDict, total=False):
 
     # Specialist Agent Outputs
     agent_findings: Dict[str, Any]
+    evidence_analysis: Optional[Dict[str, Any]]
     external_evidence: List[Dict[str, Any]]
     provider_statuses: Dict[str, str]
 

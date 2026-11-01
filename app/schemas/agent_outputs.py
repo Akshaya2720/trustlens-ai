@@ -80,6 +80,16 @@ class ClaimVerificationOutput(BaseModel):
     summary: str = ""
 
 
+class EvidenceAnalysisOutput(BaseModel):
+    """Structured output from Agent 6: Evidence Analysis."""
+    corroborating_evidence: List[str] = Field(default_factory=list, description="Cross-modal or multi-agent corroborated evidence findings")
+    contradictions: List[str] = Field(default_factory=list, description="Direct contradictions or inconsistencies across findings")
+    missing_evidence: List[str] = Field(default_factory=list, description="Expected security evidence or data sources that are absent or unavailable")
+    uncertainties: List[str] = Field(default_factory=list, description="Low-confidence, ambiguous, or unverifiable claims/artifacts")
+    evidence_coverage_ratio: float = Field(default=1.0, ge=0.0, le=1.0, description="Proportion of scheduled security checks successfully completed")
+    summary: str = Field(default="", description="Objective synthesis of evidence reconciliation")
+
+
 class RiskSynthesisOutput(BaseModel):
     """Structured output from Agent F: Risk Synthesis."""
     agreement_observations: List[str] = Field(default_factory=list)

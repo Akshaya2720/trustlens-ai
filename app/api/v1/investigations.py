@@ -19,6 +19,7 @@ from app.orchestration.state import InvestigationState
 from app.schemas.evidence import EvidenceItem, ProviderStatusItem, RiskAssessmentSchema
 from app.schemas.investigation import (
     ArtifactSummary,
+    ClaimInvestigationRequest,
     ExtractedEntitySummary,
     InvestigationEvidenceResponse,
     InvestigationReportResponse,
@@ -144,9 +145,13 @@ def map_investigation_to_response(inv: Investigation) -> InvestigationReportResp
     verified_claims = []
     unverified_claims = []
     for clm in inv.claims:
-        has_ev = any(ev.query_type == "claim" and ev.query_target == clm.claim_text for ev in inv.external_evidence)
-        if has_ev:
-            verified_claims.append(clm.claim_text)
+        matching_ev = [
+            ev for ev in inv.external_evidence
+            if ev.query_type == "claim" and ev.query_target == clm.claim_text
+        ]
+        if matching_ev and matching_ev[0].raw_status in ("ok", "confirmed_match") and not matching_ev[0].error_message:
+            threat_desc = matching_ev[0].threat_description or "Verified"
+            verified_claims.append(f"{clm.claim_text} ({threat_desc})")
         else:
             unverified_claims.append(clm.claim_text)
 
@@ -359,6 +364,59 @@ async def investigate_url(
         "extracted_urls": [val_res.normalized_url],
         "categories": ["phishing_and_malicious_links"],
         "planned_tools": ["threat_intel"],
+        "agent_findings": {},
+        "external_evidence": [],
+        "provider_statuses": {},
+        "status": "pending",
+    }
+
+    final_state = await execute_investigation_workflow(state)
+    saved_inv = await persist_investigation_state(repo, final_state)
+    return map_investigation_to_response(saved_inv)
+
+
+@router.post("/claim", response_model=InvestigationReportResponse, status_code=status.HTTP_201_CREATED)
+async def investigate_claim(
+    payload: ClaimInvestigationRequest,
+    repo: InvestigationRepository = Depends(get_repository),
+    _user: str = Depends(verify_api_key),
+):
+    """Phase 6: Investigates public claims, policy statements, viral messages, or misinformation."""
+    inv_id = str(uuid.uuid4())
+    logger.info(f"Received claim investigation request [{inv_id}]")
+
+    claim_text = payload.claim_text.strip()
+    if not claim_text:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Claim text cannot be empty or whitespace.",
+        )
+
+    await repo.create_investigation(
+        investigation_id=inv_id,
+        input_type="claim",
+        raw_input_preview=claim_text[:500],
+        model_id=settings.META_MODEL_ID,
+    )
+
+    await repo.add_artifact(
+        investigation_id=inv_id,
+        artifact_type="text",
+        filename="public_claim.txt",
+        file_size=len(claim_text.encode("utf-8")),
+        sha256_hash=compute_sha256(claim_text.encode("utf-8")),
+    )
+
+    state: InvestigationState = {
+        "investigation_id": inv_id,
+        "input_type": "claim",
+        "raw_text": claim_text,
+        "context_notes": payload.context_notes,
+        "extracted_entities": [],
+        "extracted_claims": [{"claim_text": claim_text, "context": payload.context_notes}],
+        "extracted_urls": [],
+        "categories": ["potential_misinformation"],
+        "planned_tools": ["claim_verification"],
         "agent_findings": {},
         "external_evidence": [],
         "provider_statuses": {},

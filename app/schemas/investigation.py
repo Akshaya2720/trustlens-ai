@@ -20,6 +20,11 @@ class URLInvestigationRequest(BaseModel):
     context_notes: Optional[str] = Field(None, max_length=2000, description="Optional context")
 
 
+class ClaimInvestigationRequest(BaseModel):
+    claim_text: str = Field(..., min_length=5, max_length=10000, description="Public claim, policy statement, viral message, or announcement to verify")
+    context_notes: Optional[str] = Field(None, max_length=2000, description="Optional context or origin of the claim")
+
+
 class QuestionRequest(BaseModel):
     question: str = Field(..., min_length=2, max_length=1000, description="Question regarding the completed investigation findings")
 

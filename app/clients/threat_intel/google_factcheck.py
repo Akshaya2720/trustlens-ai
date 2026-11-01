@@ -58,13 +58,19 @@ class GoogleFactCheckClient:
 
     async def search_claim(self, claim: str, language_code: str = "en") -> tuple[NormalizedEvidenceRecord, List[FactCheckClaimResult]]:
         """Searches Google Fact Check ClaimSearch API for third-party verified fact checks."""
+        from app.clients.threat_intel.claims_repository import DebunkedClaimsRepository
+
         if not self.is_configured:
+            repo_res = DebunkedClaimsRepository.search(claim)
+            if repo_res:
+                return repo_res
+
             record = NormalizedEvidenceRecord(
                 provider_name="GoogleFactCheck",
                 query_type="claim",
                 query_target=claim,
                 status=ProviderStatus.NOT_CONFIGURED,
-                error_message="GOOGLE_FACTCHECK_API_KEY is not configured.",
+                error_message="GOOGLE_FACTCHECK_API_KEY is not configured and claim was not found in verified public debunk repository. (Claim remains unverified).",
             )
             return record, []
 
@@ -86,6 +92,10 @@ class GoogleFactCheckClient:
                 raw_claims = data.get("claims", [])
 
                 if not raw_claims:
+                    repo_res = DebunkedClaimsRepository.search(claim)
+                    if repo_res:
+                        return repo_res
+
                     record = NormalizedEvidenceRecord(
                         provider_name="GoogleFactCheck",
                         query_type="claim",

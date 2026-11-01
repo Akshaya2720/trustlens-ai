@@ -5,6 +5,31 @@ All notable changes to TrustLens AI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - Phase 6 Milestone: Misinformation & Fact-Check Verification Engine
+
+### Added
+- Dedicated factual verification endpoint: `POST /api/v1/investigations/claim` for analyzing public statements, policy announcements, viral rumors, and misinformation.
+- `GoogleFactCheckClient` integration querying the Google Fact Check Tools ClaimSearch API, with rating normalization (`false`, `misleading`, `partly_true`, `true`, `disputed`).
+- `DebunkedClaimsRepository`: In-memory verified registry of authoritative fact-checks (Reuters, AP News, PolitiFact, Snopes, WHO, IRS) providing offline fallback and benchmark validation.
+- Distinguishes debunked false claims, misleading context, unverified claims (zero hallucination guarantee), and verified authentic announcements.
+- Integration with `DeterministicRiskEngine`: debunked false claims enforce high-risk floor (minimum 65.0 score); verified authentic claims discount risk (-20.0 score).
+- Comprehensive Phase 6 test suite (`tests/test_phase6_factcheck.py` - 9 tests) covering API endpoints, repository searches, rate-limit resilience, and claims validation.
+
+## [1.4.0] - Phase 5 Milestone: 7-Agent Controlled LangGraph Architecture
+
+### Added
+- Full 7-specialist multi-agent system coordinating across specialized roles:
+  - Agent 1: Content Intelligence Agent (content parsing, entities, claim extraction, tool planning)
+  - Agent 2: Scam Detection Agent (social engineering, urgency, credential/OTP demands)
+  - Agent 3: Impersonation Investigation Agent (brand spoofing, domain mismatch detection)
+  - Agent 4: Threat Intelligence Agent (multi-provider security intelligence aggregation)
+  - Agent 5: Claim Verification Agent (factual claim verification and credibility analysis)
+  - Agent 6: Evidence Analysis Agent (`EvidenceAnalysisAgent` reconciling findings, cross-modal corroboration, contradictions, missing evidence, and evidence coverage ratio calculation)
+  - Agent 7: Risk Synthesis Agent (deterministic rules engine, narrative explanations, non-technical safety recommendations)
+- LangGraph state checkpointing using `MemorySaver` ensuring trace persistence and state isolation across investigation threads.
+- Added `EvidenceAnalysisOutput` schema with strict Pydantic validation.
+- Comprehensive Phase 5 test suite (`tests/test_phase5_agents.py` - 8 tests) verifying each agent independently and full 7-agent pipeline execution.
+
 ## [1.3.0] - Phase 4 Milestone: Advanced URL & Domain Threat Intelligence Engine
 
 ### Added

@@ -11,6 +11,7 @@ from app.core.logging import logger
 from app.schemas.agent_outputs import (
     ClaimVerificationOutput,
     ContentIntelligenceOutput,
+    EvidenceAnalysisOutput,
     ImpersonationAnalysisOutput,
     RiskSynthesisOutput,
     ScamDetectionOutput,
@@ -47,6 +48,7 @@ class RiskSynthesisAgent:
         discrepancies: Optional[List[str]] = None,
         ocr_confidence: Optional[float] = None,
         is_ocr_uncertain: bool = False,
+        evidence_analysis: Optional[EvidenceAnalysisOutput] = None,
     ) -> tuple[RiskSynthesisOutput, RiskAssessmentSchema]:
         # Step 1: Run deterministic risk engine first to calculate ground truth risk level & score
         assessment = DeterministicRiskEngine.calculate_risk(
@@ -61,8 +63,22 @@ class RiskSynthesisAgent:
             is_ocr_uncertain=is_ocr_uncertain,
         )
 
+        # Merge evidence_analysis insights into assessment
+        if evidence_analysis:
+            for c in evidence_analysis.contradictions:
+                if c not in assessment.contradictions:
+                    assessment.contradictions.append(c)
+            for m in evidence_analysis.missing_evidence:
+                if m not in assessment.limitations:
+                    assessment.limitations.append(m)
+            for u in evidence_analysis.uncertainties:
+                if u not in assessment.limitations:
+                    assessment.limitations.append(u)
+
         # Baseline synthesis output
         agreements = []
+        if evidence_analysis and evidence_analysis.corroborating_evidence:
+            agreements.extend(evidence_analysis.corroborating_evidence)
         if threat_intel and threat_intel.any_malicious_detected:
             agreements.append("Threat intelligence confirms malicious destination identified in message content.")
         if scam_detection and scam_detection.credential_or_otp_harvesting:

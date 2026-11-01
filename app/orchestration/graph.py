@@ -6,9 +6,11 @@ agent classification, concurrent specialist checks, and risk synthesis.
 
 import asyncio
 from typing import Any, Dict, List
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from app.agents.claim_verification import ClaimVerificationAgent
 from app.agents.content_intelligence import ContentIntelligenceAgent
+from app.agents.evidence_analysis import EvidenceAnalysisAgent
 from app.agents.impersonation_analysis import ImpersonationAnalysisAgent
 from app.agents.risk_synthesis import RiskSynthesisAgent
 from app.agents.scam_detection import ScamDetectionAgent
@@ -19,6 +21,7 @@ from app.orchestration.state import InvestigationState
 from app.schemas.agent_outputs import (
     ClaimVerificationOutput,
     ContentIntelligenceOutput,
+    EvidenceAnalysisOutput,
     ImpersonationAnalysisOutput,
     ScamDetectionOutput,
     ThreatIntelligenceOutput,
@@ -165,12 +168,21 @@ async def classify_investigation_node(state: InvestigationState) -> Dict[str, An
         pre_extracted_entities=entities,
     )
 
-    claims_list = [{"claim_text": c.claim_text, "context": c.context} for c in intel_output.claims]
+    claims_list = list(state.get("extracted_claims") or [])
+    for c in intel_output.claims:
+        if c.claim_text not in [clm.get("claim_text") for clm in claims_list]:
+            claims_list.append({"claim_text": c.claim_text, "context": c.context})
+
     for ent in intel_output.entities:
         if ent.value not in [e.get("value") for e in entities]:
             entities.append({"type": ent.type, "value": ent.value, "context": ent.context})
         if ent.type == "url" and ent.value not in state.get("extracted_urls", []):
             state.get("extracted_urls", []).append(ent.value)
+
+    planned_tools = list(state.get("planned_tools") or [])
+    for t in intel_output.recommended_tools:
+        if t not in planned_tools:
+            planned_tools.append(t)
 
     current_findings = dict(state.get("agent_findings") or {})
     current_findings["content_intelligence"] = intel_output.model_dump()
@@ -179,7 +191,7 @@ async def classify_investigation_node(state: InvestigationState) -> Dict[str, An
         "categories": intel_output.categories,
         "extracted_claims": claims_list,
         "extracted_entities": entities,
-        "planned_tools": intel_output.recommended_tools,
+        "planned_tools": planned_tools,
         "agent_findings": current_findings,
     }
 
@@ -202,14 +214,26 @@ async def plan_specialist_checks_node(state: InvestigationState) -> Dict[str, An
         if "scam_analysis" not in planned:
             planned.append("scam_analysis")
 
-    if state.get("extracted_claims") and "claim_verification" not in planned:
+    public_claim_keywords = [
+        "subsidy", "grant", "relief", "stimulus", "executive order",
+        "kyc requirement", "5g", "covid", "who declares", "lottery winner",
+        "jackpot giveaway", "tax rebate", "mileage tax", "account suspended"
+    ]
+    extracted_claims = list(state.get("extracted_claims") or [])
+    if any(k in text for k in public_claim_keywords):
+        if "claim_verification" not in planned:
+            planned.append("claim_verification")
+        if not extracted_claims:
+            extracted_claims.append({"claim_text": state.get("raw_text", ""), "context": "Extracted public claim"})
+
+    if (extracted_claims or state.get("input_type") == "claim") and "claim_verification" not in planned:
         planned.append("claim_verification")
 
     # If no checks were planned, run scam_analysis as default baseline
     if not planned:
         planned.append("scam_analysis")
 
-    return {"planned_tools": planned}
+    return {"planned_tools": planned, "extracted_claims": extracted_claims}
 
 
 async def execute_specialist_checks_node(state: InvestigationState) -> Dict[str, Any]:
@@ -220,6 +244,8 @@ async def execute_specialist_checks_node(state: InvestigationState) -> Dict[str,
     sender_hint = state.get("sender_hint")
     urls = state.get("extracted_urls", [])
     claims = [c.get("claim_text", "") for c in state.get("extracted_claims", [])]
+    if not claims and state.get("input_type") == "claim" and text:
+        claims = [text]
 
     findings = dict(state.get("agent_findings", {}))
     external_evidence = list(state.get("external_evidence", []))
@@ -283,9 +309,53 @@ async def execute_specialist_checks_node(state: InvestigationState) -> Dict[str,
     }
 
 
+async def analyze_evidence_node(state: InvestigationState) -> Dict[str, Any]:
+    """Step 6.5: Agent 6 (Evidence Analysis Agent) reconciles all specialist findings,
+    computes evidence coverage ratio, and identifies corroboration, contradictions,
+    missing evidence, and uncertainties.
+    """
+    logger.info(f"[{state['investigation_id']}] Running Agent 6: Evidence Analysis")
+    findings = dict(state.get("agent_findings", {}))
+    ev_records_raw = state.get("external_evidence", [])
+    provider_statuses = state.get("provider_statuses", {})
+
+    ev_records: List[NormalizedEvidenceRecord] = []
+    for r in ev_records_raw:
+        try:
+            ev_records.append(NormalizedEvidenceRecord(**r))
+        except Exception:
+            pass
+
+    content_intel = ContentIntelligenceOutput(**findings.get("content_intelligence", {}))
+    threat_intel = ThreatIntelligenceOutput(**findings["threat_intel"]) if "threat_intel" in findings and "checked_urls" in findings["threat_intel"] else None
+    scam_detection = ScamDetectionOutput(**findings["scam_analysis"]) if "scam_analysis" in findings and "urgency_detected" in findings["scam_analysis"] else None
+    impersonation = ImpersonationAnalysisOutput(**findings["impersonation_check"]) if "impersonation_check" in findings and "is_domain_mismatch" in findings["impersonation_check"] else None
+    claim_verification = ClaimVerificationOutput(**findings["claim_verification"]) if "claim_verification" in findings and "claims_analyzed" in findings["claim_verification"] else None
+
+    ev_analysis = await EvidenceAnalysisAgent.analyze(
+        content_intel=content_intel,
+        threat_intel=threat_intel,
+        scam_detection=scam_detection,
+        impersonation=impersonation,
+        claim_verification=claim_verification,
+        evidence_records=ev_records,
+        provider_statuses=provider_statuses,
+        discrepancies=state.get("extraction_discrepancies", []),
+        ocr_confidence=state.get("ocr_confidence"),
+        is_ocr_uncertain=state.get("is_ocr_uncertain", False),
+        planned_tools=state.get("planned_tools", []),
+    )
+
+    findings["evidence_analysis"] = ev_analysis.model_dump(mode="json")
+    return {
+        "agent_findings": findings,
+        "evidence_analysis": ev_analysis.model_dump(mode="json"),
+    }
+
+
 async def synthesize_findings_node(state: InvestigationState) -> Dict[str, Any]:
     """Step 7: Reconciles all findings, runs deterministic risk engine, and produces final summary."""
-    logger.info(f"[{state['investigation_id']}] Running Agent F: Risk Synthesis & Deterministic Risk Engine")
+    logger.info(f"[{state['investigation_id']}] Running Agent 7: Risk Synthesis & Deterministic Risk Engine")
     findings = state.get("agent_findings", {})
     ev_records_raw = state.get("external_evidence", [])
     provider_statuses = state.get("provider_statuses", {})
@@ -303,6 +373,7 @@ async def synthesize_findings_node(state: InvestigationState) -> Dict[str, Any]:
     scam_detection = ScamDetectionOutput(**findings["scam_analysis"]) if "scam_analysis" in findings and "urgency_detected" in findings["scam_analysis"] else None
     impersonation = ImpersonationAnalysisOutput(**findings["impersonation_check"]) if "impersonation_check" in findings and "is_domain_mismatch" in findings["impersonation_check"] else None
     claim_verification = ClaimVerificationOutput(**findings["claim_verification"]) if "claim_verification" in findings and "claims_analyzed" in findings["claim_verification"] else None
+    evidence_analysis = EvidenceAnalysisOutput(**findings["evidence_analysis"]) if "evidence_analysis" in findings and "evidence_coverage_ratio" in findings["evidence_analysis"] else None
 
     synth_output, assessment = await RiskSynthesisAgent.synthesize(
         content_intel=content_intel,
@@ -315,6 +386,7 @@ async def synthesize_findings_node(state: InvestigationState) -> Dict[str, Any]:
         discrepancies=state.get("extraction_discrepancies", []),
         ocr_confidence=state.get("ocr_confidence"),
         is_ocr_uncertain=state.get("is_ocr_uncertain", False),
+        evidence_analysis=evidence_analysis,
     )
 
     if state.get("audio_bytes") or state.get("input_type") == "audio":
@@ -352,7 +424,7 @@ async def synthesize_findings_node(state: InvestigationState) -> Dict[str, Any]:
 
 
 def build_investigation_graph():
-    """Builds and compiles the LangGraph State Machine for TrustLens AI."""
+    """Builds and compiles the LangGraph State Machine for TrustLens AI with state checkpoints."""
     workflow = StateGraph(InvestigationState)
 
     # Add Nodes
@@ -360,6 +432,7 @@ def build_investigation_graph():
     workflow.add_node("classify_investigation", classify_investigation_node)
     workflow.add_node("plan_specialist_checks", plan_specialist_checks_node)
     workflow.add_node("execute_specialist_checks", execute_specialist_checks_node)
+    workflow.add_node("analyze_evidence", analyze_evidence_node)
     workflow.add_node("synthesize_findings", synthesize_findings_node)
 
     # Add Directed Edges
@@ -367,10 +440,12 @@ def build_investigation_graph():
     workflow.add_edge("normalize_content", "classify_investigation")
     workflow.add_edge("classify_investigation", "plan_specialist_checks")
     workflow.add_edge("plan_specialist_checks", "execute_specialist_checks")
-    workflow.add_edge("execute_specialist_checks", "synthesize_findings")
+    workflow.add_edge("execute_specialist_checks", "analyze_evidence")
+    workflow.add_edge("analyze_evidence", "synthesize_findings")
     workflow.add_edge("synthesize_findings", END)
 
-    return workflow.compile()
+    checkpointer = MemorySaver()
+    return workflow.compile(checkpointer=checkpointer)
 
 
 investigation_graph = build_investigation_graph()
@@ -378,5 +453,6 @@ investigation_graph = build_investigation_graph()
 
 async def execute_investigation_workflow(state: InvestigationState) -> InvestigationState:
     """Executes the complete compiled LangGraph workflow from an initial state."""
-    result = await investigation_graph.ainvoke(state)
+    config = {"configurable": {"thread_id": state.get("investigation_id", "default_thread")}}
+    result = await investigation_graph.ainvoke(state, config=config)
     return result
