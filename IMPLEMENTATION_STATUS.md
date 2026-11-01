@@ -12,9 +12,10 @@ Statuses used: `NOT STARTED`, `IN PROGRESS`, `IMPLEMENTED`, `VERIFIED`, `BLOCKED
 | URL intelligence | VERIFIED | SafeURLInspector SSRF / per-hop redirect defense, VirusTotal, PhishTank, and URLhaus adapters, domain spoofing/Punycode/TLD analysis, provider disagreement detection, and unverified URL safety policy (`test_phase4_url_intelligence.py`) |
 | Fact verification | VERIFIED | Dedicated `POST /api/v1/investigations/claim` endpoint, `GoogleFactCheckClient`, `DebunkedClaimsRepository` fallback, rating normalization, publisher citations, and debunked false / unverified / verified true handling (`test_phase6_factcheck.py`) |
 | Agent orchestration | VERIFIED | Complete 7-specialist multi-agent system active with Agent 6 Evidence Analysis, LangGraph state checkpoints (`MemorySaver`), and deterministic synthesis (`test_phase5_agents.py`) |
-| Cross-modal analysis | NOT STARTED | Scheduled for Phase 7 |
-| Risk engine | VERIFIED | Deterministic ruleset v1.4.0 active with debunked claim floors, verified authentic discounts, and multi-provider contradiction tracking (`test_risk_engine.py`) |
+| Cross-modal analysis | VERIFIED | Full multimodal endpoint `POST /api/v1/investigations/multimodal`, cross-modal contradiction detection (Text vs Image URL, Audio vs Visual, Audio vs Network destination) and multi-channel corroboration (`test_phase7_crossmodal.py`) |
+| Risk engine | VERIFIED | Deterministic ruleset v1.4.0 with granular `score_breakdown`, cross-modal contradiction floors (min 65.0), multi-channel impersonation weighting (+30.0), and unverified URL safety policy (`test_phase8_risk_engine.py`) |
 | GitHub deployment | VERIFIED | Continuous remote synchronization on `main` branch (`https://github.com/Akshaya2720/trustlens-ai`) |
 
-Last Updated: Phase 5 & 6 Completion
+Last Updated: Phase 7 & 8 Completion
+
 

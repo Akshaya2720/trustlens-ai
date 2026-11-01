@@ -344,6 +344,10 @@ async def analyze_evidence_node(state: InvestigationState) -> Dict[str, Any]:
         ocr_confidence=state.get("ocr_confidence"),
         is_ocr_uncertain=state.get("is_ocr_uncertain", False),
         planned_tools=state.get("planned_tools", []),
+        image_analysis=findings.get("image_analysis"),
+        audio_analysis=findings.get("audio_analysis"),
+        raw_text=state.get("raw_text"),
+        extracted_urls=state.get("extracted_urls", []),
     )
 
     findings["evidence_analysis"] = ev_analysis.model_dump(mode="json")

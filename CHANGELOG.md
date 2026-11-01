@@ -5,6 +5,28 @@ All notable changes to TrustLens AI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - Phase 8 Milestone: Deterministic Risk Engine v1.4.0 & Granular Score Breakdown
+
+### Added
+- Deterministic ruleset v1.4.0 in `DeterministicRiskEngine`:
+  - `WEIGHT_CROSS_MODAL_CONTRADICTION = 25.0`
+  - `WEIGHT_MULTI_CHANNEL_IMPERSONATION = 30.0`
+  - Cross-modal contradiction floor: ensures conflicting modalities enforce a minimum risk score of 65.0.
+  - Granular `score_breakdown` dictionary mapping transparent score additions/subtractions directly to `RiskAssessmentSchema`.
+  - Comprehensive calibration of confidence scores decaying appropriately upon noisy or low-confidence inputs (e.g. uncertain OCR).
+- Comprehensive Phase 8 test suite (`tests/test_phase8_risk_engine.py` - 8 tests) verifying mathematical reproducibility, malicious floors, debunked claim floors, cross-modal discrepancy penalties, unverified URL safety policy, and authentic discount mechanics.
+
+## [1.6.0] - Phase 7 Milestone: Cross-Modal Contradiction & Multimodal Investigation Engine
+
+### Added
+- Unified full multimodal investigation endpoint: `POST /api/v1/investigations/multimodal` accepting text context, URLs, image screenshots, and audio voice-notes in a single unified investigation payload.
+- Cross-modal contradiction and corroboration engine in `EvidenceAnalysisAgent`:
+  - Text vs Visual URL contradiction detection (e.g., email text claims `paypal.com` but screenshot shows malicious destination `phish-secure.xyz`).
+  - Audio verbal claims vs Visual evidence contradiction (e.g., audio claims to be Bank Fraud Dept but screenshot reveals unofficial wire/gift card app).
+  - Audio verbal demands vs Network destination contradictions (e.g., caller instructs visiting a URL that resolves to an unverified or phishing domain).
+  - Multi-channel coordinated social-engineering corroboration (coordinated attacks across SMS, screenshots, and audio).
+- Comprehensive Phase 7 test suite (`tests/test_phase7_crossmodal.py` - 7 tests) verifying cross-modal contradictions, multi-channel corroboration, multi-artifact API uploads, and empty payload rejections.
+
 ## [1.5.0] - Phase 6 Milestone: Misinformation & Fact-Check Verification Engine
 
 ### Added

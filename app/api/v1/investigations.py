@@ -159,11 +159,23 @@ def map_investigation_to_response(inv: Investigation) -> InvestigationReportResp
     recommended_actions = inv.risk_assessment.recommendations if inv.risk_assessment and inv.risk_assessment.recommendations else []
     limitations = inv.risk_assessment.limitations if inv.risk_assessment and inv.risk_assessment.limitations else []
 
+    active_input_types = []
+    if inv.input_type == "multimodal":
+        for a in inv.artifacts:
+            if a.artifact_type not in active_input_types:
+                active_input_types.append(a.artifact_type)
+        if any(e.entity_type == "url" for e in inv.entities) and "url" not in active_input_types:
+            active_input_types.append("url")
+        if not active_input_types:
+            active_input_types = ["multimodal"]
+    else:
+        active_input_types = [inv.input_type] if inv.input_type else ["text"]
+
     return InvestigationReportResponse(
         investigation_id=inv.id,
         status=inv.status,
         input_type=inv.input_type,
-        input_types=[inv.input_type] if inv.input_type else ["image"],
+        input_types=active_input_types,
         overall_risk=inv.final_risk_level or "unknown",
         classification_labels=inv.categories or [],
         categories=inv.categories or [],
@@ -572,18 +584,30 @@ async def investigate_multimodal(
     sender_hint: Optional[str] = Form(None),
     context_notes: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
+    image_file: Optional[UploadFile] = File(None),
+    audio_file: Optional[UploadFile] = File(None),
     repo: InvestigationRepository = Depends(get_repository),
     _user: str = Depends(verify_api_key),
 ):
-    """Investigates a combined submission containing text, an image/audio file, and an optional URL."""
-    if not any([text, url, file]):
+    """Phase 7: Investigates combined submissions containing text, images/screenshots, audio recordings, and URLs."""
+    if not any([text, url, file, image_file, audio_file]):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least one input modality (text, url, or file) must be provided.",
+            detail="At least one input modality (text, url, image_file, audio_file, or file) must be provided.",
         )
 
     inv_id = str(uuid.uuid4())
-    combined_preview = f"Multimodal submission: text={bool(text)}, url={url}, file={file.filename if file else None}"
+    modalities_desc = []
+    if text:
+        modalities_desc.append("text")
+    if url:
+        modalities_desc.append("url")
+    if file or image_file:
+        modalities_desc.append("image")
+    if file or audio_file:
+        modalities_desc.append("audio")
+
+    combined_preview = f"Multimodal submission: {', '.join(set(modalities_desc))}"
 
     await repo.create_investigation(
         investigation_id=inv_id,
@@ -603,18 +627,60 @@ async def investigate_multimodal(
     filename = None
     mime_type = None
 
-    if file:
-        file_content = await file.read()
-        filename = file.filename
-        mime_type = file.content_type
-        sha = compute_sha256(file_content)
+    # Handle image file
+    target_image = image_file
+    if not target_image and file:
+        f_name = file.filename or ""
+        f_type = file.content_type or ""
+        if f_type in settings.ALLOWED_IMAGE_TYPES or any(f_name.lower().endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".webp"]):
+            target_image = file
 
-        if mime_type in settings.ALLOWED_IMAGE_TYPES:
-            image_bytes = file_content
-            await repo.add_artifact(inv_id, "image", filename, mime_type, len(file_content), sha)
-        elif mime_type in settings.ALLOWED_AUDIO_TYPES:
-            audio_bytes = file_content
-            await repo.add_artifact(inv_id, "audio", filename, mime_type, len(file_content), sha)
+    if target_image:
+        content = await target_image.read()
+        if len(content) > settings.MAX_UPLOAD_SIZE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Image file exceeds maximum upload size of {settings.MAX_UPLOAD_SIZE_BYTES} bytes",
+            )
+        _, detected_mime, _, _, sanitized_img = validate_image_bytes(
+            content,
+            allowed_types=settings.ALLOWED_IMAGE_TYPES,
+            max_size_bytes=settings.MAX_UPLOAD_SIZE_BYTES,
+        )
+        image_bytes = sanitized_img
+        filename = target_image.filename
+        mime_type = detected_mime
+        sha = compute_sha256(sanitized_img)
+        await repo.add_artifact(inv_id, "image", filename, detected_mime, len(sanitized_img), sha)
+
+    # Handle audio file
+    target_audio = audio_file
+    if not target_audio and file and target_image != file:
+        f_name = file.filename or ""
+        f_type = file.content_type or ""
+        if f_type in settings.ALLOWED_AUDIO_TYPES or any(f_name.lower().endswith(ext) for ext in [".wav", ".mp3", ".m4a", ".ogg", ".webm", ".aac"]):
+            target_audio = file
+
+    if target_audio:
+        content = await target_audio.read()
+        if len(content) > settings.MAX_UPLOAD_SIZE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Audio file exceeds maximum upload size of {settings.MAX_UPLOAD_SIZE_BYTES} bytes",
+            )
+        _, detected_audio_mime, file_sz, sanitized_audio = validate_audio_bytes(
+            content,
+            allowed_types=settings.ALLOWED_AUDIO_TYPES,
+            max_size_bytes=settings.MAX_UPLOAD_SIZE_BYTES,
+        )
+        audio_bytes = sanitized_audio
+        audio_sha = compute_sha256(sanitized_audio)
+        await repo.add_artifact(inv_id, "audio", target_audio.filename, detected_audio_mime, file_sz, audio_sha)
+
+    # Store text artifact if text provided
+    if text:
+        text_sha = compute_sha256(text.encode("utf-8"))
+        await repo.add_artifact(inv_id, "text", "message.txt", "text/plain", len(text.encode("utf-8")), text_sha)
 
     raw_text_combined = f"{text or ''}\n{url or ''}".strip()
 
@@ -640,6 +706,12 @@ async def investigate_multimodal(
     }
 
     final_state = await execute_investigation_workflow(state)
+
+    if final_state.get("transcription"):
+        await repo.update_artifact_transcript(inv_id, final_state["transcription"])
+    if final_state.get("ocr_text"):
+        await repo.update_artifact_ocr(inv_id, final_state["ocr_text"])
+
     saved_inv = await persist_investigation_state(repo, final_state)
     return map_investigation_to_response(saved_inv)
 

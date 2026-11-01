@@ -38,4 +38,5 @@ class RiskAssessmentSchema(BaseModel):
     contradictions: List[str] = Field(default_factory=list)
     recommendations: List[str] = Field(default_factory=list)
     limitations: List[str] = Field(default_factory=list)
+    score_breakdown: List[Dict[str, Any]] = Field(default_factory=list)
     generated_at: Optional[datetime] = None

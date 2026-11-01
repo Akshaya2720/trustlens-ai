@@ -19,7 +19,7 @@ from app.schemas.evidence import RiskAssessmentSchema
 class DeterministicRiskEngine:
     """Transparent, deterministic rule-based scoring engine for digital safety investigations."""
 
-    RULESET_VERSION = "v1.2.0"
+    RULESET_VERSION = "v1.4.0"
 
     # Base additive weights
     WEIGHT_CONFIRMED_MALWARE = 55.0
@@ -28,6 +28,8 @@ class DeterministicRiskEngine:
     WEIGHT_DEBUNKED_FACTCHECK = 35.0
     WEIGHT_DOMAIN_IMPERSONATION = 35.0
     WEIGHT_CREDENTIAL_OTP_HARVESTING = 35.0
+    WEIGHT_CROSS_MODAL_CONTRADICTION = 25.0
+    WEIGHT_MULTI_CHANNEL_IMPERSONATION = 30.0
     WEIGHT_FINANCIAL_PRESSURE_URGENCY = 25.0
     WEIGHT_SUSPICIOUS_ATTACHMENT = 25.0
 
@@ -185,22 +187,22 @@ class DeterministicRiskEngine:
                     f"{claim_verification.unverified_claims_count} claim(s) lack authoritative third-party fact-checking records and remain unverified."
                 )
 
-        # 5. Cap and Floor Logic
-        # Rule: A confirmed malicious record strictly prevents risk from dropping below HIGH (min 70 score)
-        if has_confirmed_malicious:
-            score = max(score, 70.0)
-
-        # Rule: A debunked false claim strictly prevents risk from dropping below HIGH (min 65 score)
-        if claim_verification and claim_verification.debunked_claims_count > 0:
-            score = max(score, 65.0)
-
-        # Normalize score within [0, 100]
-        score = min(100.0, max(0.0, score))
-
-        # 6. Contradiction Detection & Discrepancies
+        # 5. Contradiction Detection & Discrepancies
         for d in discrepancies:
             contradictions.append(f"Model-OCR Extraction Discrepancy: {d}")
             indicators.append(f"Observable Extraction Inconsistency: {d}")
+
+        has_cross_modal_contradiction = False
+        has_multi_channel_impersonation = False
+        for c in contradictions:
+            if "Cross-Modal Contradiction" in c:
+                has_cross_modal_contradiction = True
+                score += cls.WEIGHT_CROSS_MODAL_CONTRADICTION
+                indicators.append(f"High-Risk Cross-Modal Inconsistency: {c}")
+            elif "Multi-channel" in c or "multi-channel" in c:
+                has_multi_channel_impersonation = True
+                score += cls.WEIGHT_MULTI_CHANNEL_IMPERSONATION
+                indicators.append(f"Coordinated Multi-Channel Impersonation: {c}")
 
         # Check if URL reputation is clean but scam text is aggressive
         clean_url_providers = [
@@ -212,6 +214,26 @@ class DeterministicRiskEngine:
                 f"Threat intelligence providers ({', '.join(clean_url_providers)}) report no existing malware/phishing records, "
                 "yet the text exhibits clear credential-harvesting patterns (suggests brand new zero-day phishing or unindexed lure)."
             )
+
+        # 6. Cap and Floor Logic
+        # Rule: A confirmed malicious record strictly prevents risk from dropping below HIGH (min 70 score)
+        if has_confirmed_malicious:
+            score = max(score, 70.0)
+
+        # Rule: A debunked false claim strictly prevents risk from dropping below HIGH (min 65 score)
+        if claim_verification and claim_verification.debunked_claims_count > 0:
+            score = max(score, 65.0)
+
+        # Rule: Cross-modal contradiction strictly enforces minimum HIGH risk (min 65 score)
+        if has_cross_modal_contradiction:
+            score = max(score, 65.0)
+
+        # Rule: Active credential/OTP harvesting paired with urgency enforces min 60 score
+        if scam_detection and scam_detection.credential_or_otp_harvesting and scam_detection.urgency_detected:
+            score = max(score, 60.0)
+
+        # Normalize score within [0, 100]
+        score = min(100.0, max(0.0, score))
 
         # 7. Limitations & OCR Uncertainty Tracking
         if is_ocr_uncertain or (ocr_confidence is not None and ocr_confidence < 0.5):
@@ -229,11 +251,13 @@ class DeterministicRiskEngine:
                 limitations.append(f"{prov_name} query was skipped due to rate limiting.")
 
         # 8. Determine Risk Level
-        total_checks = len(evidence_records) + (1 if scam_detection else 0) + (1 if impersonation else 0)
+        total_checks = len(evidence_records) + (1 if scam_detection else 0) + (1 if impersonation else 0) + (1 if claim_verification else 0)
         successful_checks = len([ev for ev in evidence_records if ev.status in (ProviderStatus.OK, ProviderStatus.CONFIRMED_MATCH, ProviderStatus.NO_MATCH)])
         if scam_detection:
             successful_checks += 1
         if impersonation:
+            successful_checks += 1
+        if claim_verification:
             successful_checks += 1
 
         evidence_coverage = (successful_checks / max(1, total_checks))
