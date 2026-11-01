@@ -5,6 +5,21 @@ All notable changes to TrustLens AI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - Phase 3 Milestone: Real Audio & Voice-Note Investigation
+
+### Added
+- Dedicated audio investigation endpoint: `POST /api/v1/investigations/audio` supporting WAV, MP3, M4A, OGG, WebM, and AAC files.
+- Audio magic-byte verification (`validate_audio_bytes`) enforcing container signatures, size limits, and format verification.
+- Meta Muse Voice Transcribe client integration extracting complete speech transcripts, timestamps, and speaker segmentation.
+- Meta Muse Spark structured audio reasoning (`AudioAnalysisSchema`) identifying financial demands, OTP/credential harvesting, urgency/coercion, claims of authority, wire/crypto transfer instructions, and claims requiring external verification.
+- Auditable limitations and explicit disclaimers: no unverified speaker biometric identification or synthetic/cloned voice claims without dedicated acoustic models.
+- Artifact persistence for audio files with SHA-256 integrity hashing and transcript synchronization in database.
+- Comprehensive Phase 3 test suite (`tests/test_phase3_audio.py`) verifying magic bytes, corrupt/oversized file rejection, fallback analysis, and full end-to-end scam audio investigation.
+
+### Changed
+- Extended `InvestigationReportResponse` and `InvestigationState` with `transcription`, `audio_language`, `audio_duration_seconds`, and `transcription_segments`.
+- Updated LangGraph state machine to preserve multimodal findings across agent classification nodes.
+
 ## [1.1.0] - Phase 2 Milestone: Multimodal Image & Screenshot Investigation
 
 ### Added

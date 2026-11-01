@@ -111,6 +111,22 @@ class InvestigationRepository:
             art.ocr_text = ocr_text
             await self.db.flush()
 
+    async def update_artifact_transcript(
+        self,
+        investigation_id: str,
+        transcript: str,
+    ) -> None:
+        stmt = (
+            select(Artifact)
+            .where(Artifact.investigation_id == investigation_id, Artifact.artifact_type == "audio")
+        )
+        res = await self.db.execute(stmt)
+        art = res.scalar_one_or_none()
+        if art:
+            art.transcript = transcript
+            await self.db.flush()
+
+
     async def add_extracted_entities(
         self,
         investigation_id: str,

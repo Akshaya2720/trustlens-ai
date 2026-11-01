@@ -17,10 +17,13 @@ class InvestigationState(TypedDict, total=False):
     filename: Optional[str]
     mime_type: Optional[str]
 
-    # Normalized Content & Entities
     ocr_text: Optional[str]
     ocr_confidence: Optional[float]
     is_ocr_uncertain: Optional[bool]
+    transcription: Optional[str]
+    audio_language: Optional[str]
+    audio_duration_seconds: Optional[float]
+    transcription_segments: List[Dict[str, Any]]
     extraction_discrepancies: List[str]
     verified_claims: List[str]
     unverified_claims: List[str]

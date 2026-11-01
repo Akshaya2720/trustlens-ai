@@ -77,6 +77,11 @@ async def normalize_content_node(state: InvestigationState) -> Dict[str, Any]:
         except Exception as e:
             logger.warning(f"Image processing error: {e}")
 
+    transcription = state.get("transcription")
+    audio_language = state.get("audio_language")
+    audio_duration_seconds = state.get("audio_duration_seconds")
+    transcription_segments = list(state.get("transcription_segments") or [])
+
     # Handle audio input
     if state.get("audio_bytes"):
         try:
@@ -84,9 +89,33 @@ async def normalize_content_node(state: InvestigationState) -> Dict[str, Any]:
                 audio_bytes=state["audio_bytes"],
                 filename=state.get("filename", "voice_note.mp3"),
                 mime_type=state.get("mime_type", "audio/mpeg"),
+                context_notes=state.get("context_notes"),
             )
+            transcription = audio_res.full_transcript
+            audio_language = audio_res.language
+            audio_duration_seconds = audio_res.duration_seconds
+            transcription_segments = [s.model_dump() for s in audio_res.segments]
+            agent_findings["audio_analysis"] = audio_res.model_dump(mode="json")
+
             if audio_res.full_transcript:
-                text += f"\n[Transcribed Audio Content]:\n{audio_res.full_transcript}"
+                text += f"\n\n[Transcribed Audio Content]:\n{audio_res.full_transcript}"
+
+            for u in audio_res.extracted_urls:
+                if u not in extracted_urls:
+                    extracted_urls.append(u)
+
+            for ent in audio_res.extracted_entities:
+                if ent["value"] not in [e.get("value") for e in extracted_entities]:
+                    extracted_entities.append(ent)
+
+            for clm in audio_res.extracted_claims:
+                if clm["claim_text"] not in [c.get("claim_text") for c in extracted_claims]:
+                    extracted_claims.append(clm)
+
+            for ind in audio_res.suspicious_indicators:
+                if ind not in discrepancies:
+                    discrepancies.append(ind)
+
         except Exception as e:
             logger.warning(f"Audio processing error: {e}")
 
@@ -113,6 +142,10 @@ async def normalize_content_node(state: InvestigationState) -> Dict[str, Any]:
         "ocr_text": ocr_text,
         "ocr_confidence": ocr_confidence,
         "is_ocr_uncertain": is_ocr_uncertain,
+        "transcription": transcription,
+        "audio_language": audio_language,
+        "audio_duration_seconds": audio_duration_seconds,
+        "transcription_segments": transcription_segments,
         "extraction_discrepancies": discrepancies,
     }
 
@@ -139,12 +172,15 @@ async def classify_investigation_node(state: InvestigationState) -> Dict[str, An
         if ent.type == "url" and ent.value not in state.get("extracted_urls", []):
             state.get("extracted_urls", []).append(ent.value)
 
+    current_findings = dict(state.get("agent_findings") or {})
+    current_findings["content_intelligence"] = intel_output.model_dump()
+
     return {
         "categories": intel_output.categories,
         "extracted_claims": claims_list,
         "extracted_entities": entities,
         "planned_tools": intel_output.recommended_tools,
-        "agent_findings": {"content_intelligence": intel_output.model_dump()},
+        "agent_findings": current_findings,
     }
 
 
@@ -280,6 +316,12 @@ async def synthesize_findings_node(state: InvestigationState) -> Dict[str, Any]:
         ocr_confidence=state.get("ocr_confidence"),
         is_ocr_uncertain=state.get("is_ocr_uncertain", False),
     )
+
+    if state.get("audio_bytes") or state.get("input_type") == "audio":
+        from app.services.multimodal.audio_processor import DEFAULT_AUDIO_LIMITATIONS
+        for lim in DEFAULT_AUDIO_LIMITATIONS:
+            if lim not in assessment.limitations:
+                assessment.limitations.append(lim)
 
     findings["risk_synthesis"] = synth_output.model_dump(mode="json")
 

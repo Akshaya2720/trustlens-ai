@@ -70,6 +70,15 @@ MAGIC_PNG = b"\x89PNG\r\n\x1a\n"
 MAGIC_WEBP_RIFF = b"RIFF"
 MAGIC_WEBP_WEBP = b"WEBP"
 
+# Magic byte file signatures for supported audio formats
+MAGIC_WAV_RIFF = b"RIFF"
+MAGIC_WAV_WAVE = b"WAVE"
+MAGIC_OGG = b"OggS"
+MAGIC_MP3_ID3 = b"ID3"
+MAGIC_FLAC = b"fLaC"
+MAGIC_WEBM = b"\x1a\x45\xdf\xa3"
+
+
 PROMPT_INJECTION_PATTERNS = [
     r"ignore\s+(all\s+)?(previous|prior)\s+(instructions|prompts|directions)",
     r"disregard\s+(all\s+)?(previous|prior)\s+(instructions|prompts)",
@@ -110,7 +119,7 @@ def validate_image_bytes(
 
     if len(data) > max_size:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=413,
             detail=f"File size {len(data)} bytes exceeds maximum permitted {max_size} bytes",
         )
 
@@ -191,3 +200,82 @@ def validate_image_bytes(
         )
 
     return detected_fmt, detected_mime, width, height, sanitized_bytes
+
+
+def validate_audio_bytes(
+    data: bytes,
+    allowed_types: Optional[List[str]] = None,
+    max_size_bytes: Optional[int] = None,
+) -> tuple[str, str, int, bytes]:
+    """Validates audio bytes for size, magic byte file signature, and MIME type.
+
+    Protects against oversized uploads, malformed audio streams, and unsupported container formats.
+    Returns: (detected_format, detected_mime_type, file_size, data)
+    """
+    allowed_types = allowed_types or settings.ALLOWED_AUDIO_TYPES
+    max_size = max_size_bytes or settings.MAX_UPLOAD_SIZE_BYTES
+
+    if len(data) > max_size:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Audio file size {len(data)} bytes exceeds maximum permitted {max_size} bytes",
+        )
+
+    if len(data) < 12:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="File is too small to be a valid audio file or is corrupted",
+        )
+
+    detected_mime: Optional[str] = None
+    detected_fmt: Optional[str] = None
+
+    # 1. WAV Check (RIFF header + WAVE format indicator)
+    if data.startswith(MAGIC_WAV_RIFF) and len(data) >= 12 and data[8:12] == MAGIC_WAV_WAVE:
+        detected_mime = "audio/wav"
+        detected_fmt = "WAV"
+    # 2. OGG Check
+    elif data.startswith(MAGIC_OGG):
+        detected_mime = "audio/ogg"
+        detected_fmt = "OGG"
+    # 3. AAC ADTS Stream (check before generic MP3 MPEG sync)
+    elif len(data) >= 2 and (data[:2] == b"\xff\xf1" or data[:2] == b"\xff\xf9"):
+        detected_mime = "audio/aac"
+        detected_fmt = "AAC"
+    # 4. MP3 Check (ID3v2 tag or MPEG audio frame sync)
+    elif data.startswith(MAGIC_MP3_ID3) or (len(data) >= 2 and data[0] == 0xFF and (data[1] & 0xE0) == 0xE0):
+        detected_mime = "audio/mpeg"
+        detected_fmt = "MP3"
+    # 5. M4A / MP4 Container (ftyp signature at byte 4)
+    elif len(data) >= 8 and data[4:8] == b"ftyp":
+        detected_mime = "audio/mp4"
+        detected_fmt = "M4A"
+    # 6. WebM Audio Container
+    elif data.startswith(MAGIC_WEBM):
+        detected_mime = "audio/webm"
+        detected_fmt = "WEBM"
+    # 7. FLAC
+    elif data.startswith(MAGIC_FLAC):
+        detected_mime = "audio/flac"
+        detected_fmt = "FLAC"
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Invalid audio signature. Supported formats: WAV, MP3, M4A, OGG, WebM, AAC.",
+        )
+
+    # Normalize audio/x-m4a compatibility with audio/mp4
+    compatible_allowed = set(allowed_types)
+    if "audio/mp4" in compatible_allowed:
+        compatible_allowed.add("audio/x-m4a")
+    if "audio/x-m4a" in compatible_allowed:
+        compatible_allowed.add("audio/mp4")
+
+    if detected_mime not in compatible_allowed:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=f"Audio type '{detected_mime}' is not permitted. Allowed: {allowed_types}",
+        )
+
+    return detected_fmt, detected_mime, len(data), data
+

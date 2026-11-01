@@ -135,3 +135,29 @@ class ReconciledImageAnalysis(BaseModel):
     is_ocr_uncertain: bool = False
     image_sha256: str = ""
     reconciliation_notes: List[str] = Field(default_factory=list)
+
+
+class AudioAnalysisSchema(BaseModel):
+    """Structured output from Meta Muse Spark analyzing voice notes and transcripts."""
+    apparent_topic: str = Field(..., description="Apparent topic, premise, or scenario presented in the audio")
+    financial_requests: List[str] = Field(default_factory=list, description="Any financial requests, demands, fees, or account inquiries")
+    otp_and_credential_requests: List[str] = Field(default_factory=list, description="Explicit requests for OTPs, passwords, PINs, or credentials")
+    urgency_and_threats: List[str] = Field(default_factory=list, description="High-pressure tactics, artificial deadlines, legal threats, arrest claims")
+    claims_of_authority: List[str] = Field(default_factory=list, description="Claims to represent government agencies, law enforcement, executive leadership, or banks")
+    requests_to_transfer_money: List[str] = Field(default_factory=list, description="Direct requests to send funds, gift cards, crypto, or wire transfers")
+    suspicious_instructions: List[str] = Field(default_factory=list, description="Commands to install remote software, keep secrets, or avoid speaking to branch staff")
+    potential_impersonation_indicators: List[str] = Field(default_factory=list, description="Indicators suggestive of identity or authority impersonation")
+    claims_requiring_verification: List[str] = Field(default_factory=list, description="Factual claims that require external verification")
+    extracted_urls: List[str] = Field(default_factory=list, description="URLs or domain names spoken or referenced in the audio")
+    extracted_phone_numbers: List[str] = Field(default_factory=list, description="Phone numbers spoken or referenced in the audio")
+    extracted_entities: List[EntityItem] = Field(default_factory=list, description="Structured entities mentioned in the audio")
+    transcription_limitations: List[str] = Field(
+        default_factory=lambda: [
+            "Audio transcription confidence depends on acoustic clarity and background noise.",
+            "Speaker identity cannot be verified or authenticated from a voice recording alone.",
+            "AI-generated or cloned voice detection requires a separately validated acoustic model.",
+        ],
+        description="Explicit acoustic and identification boundaries",
+    )
+    analysis_summary: str = Field(..., description="Objective, non-speculative factual summary of the audio content")
+

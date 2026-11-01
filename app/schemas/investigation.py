@@ -86,6 +86,10 @@ class InvestigationReportResponse(BaseModel):
 
     # Granular artifacts and evidence
     ocr_text: Optional[str] = None
+    transcription: Optional[str] = None
+    audio_language: Optional[str] = None
+    audio_duration_seconds: Optional[float] = None
+    transcription_segments: List[Dict[str, Any]] = Field(default_factory=list)
     extracted_urls: List[str] = Field(default_factory=list)
     observed_indicators: List[str] = Field(default_factory=list)
     extraction_discrepancies: List[str] = Field(default_factory=list)

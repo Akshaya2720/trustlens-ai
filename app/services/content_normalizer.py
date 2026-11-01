@@ -50,6 +50,11 @@ SUSPICIOUS_EXTENSIONS = [
 
 class ContentNormalizer:
     """Normalizes submitted content and extracts observable entities."""
+    URL_PATTERN = URL_PATTERN
+    EMAIL_PATTERN = EMAIL_PATTERN
+    PHONE_PATTERN = PHONE_PATTERN
+    MONEY_PATTERN = MONEY_PATTERN
+    CRYPTO_PATTERN = CRYPTO_PATTERN
 
     @classmethod
     def extract_entities(cls, text: str) -> List[Dict[str, Any]]:

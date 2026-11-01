@@ -11,7 +11,7 @@ from app.api.deps import get_repository
 from app.clients.meta_client import meta_client
 from app.core.config import settings
 from app.core.logging import logger
-from app.core.security import compute_sha256, validate_image_bytes, verify_api_key
+from app.core.security import compute_sha256, validate_audio_bytes, validate_image_bytes, verify_api_key
 from app.db.models import Investigation
 from app.db.repository import InvestigationRepository
 from app.orchestration.graph import execute_investigation_workflow
@@ -112,10 +112,23 @@ def map_investigation_to_response(inv: Investigation) -> InvestigationReportResp
 
     # Collect OCR text from artifacts or findings
     ocr_text = None
+    transcription = None
     for a in inv.artifacts:
-        if a.ocr_text:
+        if a.ocr_text and not ocr_text:
             ocr_text = a.ocr_text
-            break
+        if a.transcript and not transcription:
+            transcription = a.transcript
+
+    audio_language = None
+    audio_duration_seconds = None
+    transcription_segments = []
+    if "audio_analysis" in agent_findings_dict and isinstance(agent_findings_dict["audio_analysis"], dict):
+        audio_findings = agent_findings_dict["audio_analysis"]
+        if not transcription:
+            transcription = audio_findings.get("full_transcript")
+        audio_language = audio_findings.get("language")
+        audio_duration_seconds = audio_findings.get("duration_seconds")
+        transcription_segments = audio_findings.get("segments", [])
 
     # Extract discrepancies from agent findings or contradictions
     discrepancies = []
@@ -159,6 +172,10 @@ def map_investigation_to_response(inv: Investigation) -> InvestigationReportResp
         completed_at=inv.updated_at,
         analysis_timestamp=inv.updated_at or inv.created_at,
         ocr_text=ocr_text,
+        transcription=transcription,
+        audio_language=audio_language,
+        audio_duration_seconds=audio_duration_seconds,
+        transcription_segments=transcription_segments,
         extracted_urls=extracted_urls,
         observed_indicators=observed_indicators,
         extraction_discrepancies=discrepancies,
@@ -432,27 +449,23 @@ async def investigate_audio(
     repo: InvestigationRepository = Depends(get_repository),
     _user: str = Depends(verify_api_key),
 ):
-    """Transcribes and investigates audio messages or voice notes using Muse Voice Transcribe."""
-    if file.content_type not in settings.ALLOWED_AUDIO_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=f"Unsupported audio type '{file.content_type}'. Allowed: {settings.ALLOWED_AUDIO_TYPES}",
-        )
-
+    """Transcribes and investigates audio messages or voice notes using Muse Voice Transcribe and Muse Spark."""
     content = await file.read()
-    if len(content) > settings.MAX_UPLOAD_SIZE_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"File exceeds maximum upload size of {settings.MAX_UPLOAD_SIZE_BYTES} bytes",
-        )
+
+    # Validate audio format, magic bytes, and size
+    detected_fmt, detected_mime, file_size, sanitized_content = validate_audio_bytes(
+        content,
+        allowed_types=settings.ALLOWED_AUDIO_TYPES,
+        max_size_bytes=settings.MAX_UPLOAD_SIZE_BYTES,
+    )
 
     inv_id = str(uuid.uuid4())
-    audio_hash = compute_sha256(content)
+    audio_hash = compute_sha256(sanitized_content)
 
     await repo.create_investigation(
         investigation_id=inv_id,
         input_type="audio",
-        raw_input_preview=f"Audio message: {file.filename} ({len(content)} bytes)",
+        raw_input_preview=f"Audio message: {file.filename} ({file_size} bytes, {detected_fmt})",
         model_id=settings.META_VOICE_MODEL_ID,
     )
 
@@ -460,8 +473,8 @@ async def investigate_audio(
         investigation_id=inv_id,
         artifact_type="audio",
         filename=file.filename,
-        mime_type=file.content_type,
-        file_size=len(content),
+        mime_type=detected_mime,
+        file_size=file_size,
         sha256_hash=audio_hash,
     )
 
@@ -470,9 +483,9 @@ async def investigate_audio(
         "input_type": "audio",
         "raw_text": f"Audio file: {file.filename}\nContext: {context_notes or 'None'}",
         "context_notes": context_notes,
-        "audio_bytes": content,
+        "audio_bytes": sanitized_content,
         "filename": file.filename,
-        "mime_type": file.content_type,
+        "mime_type": detected_mime,
         "extracted_entities": [],
         "extracted_claims": [],
         "extracted_urls": [],
@@ -485,6 +498,11 @@ async def investigate_audio(
     }
 
     final_state = await execute_investigation_workflow(state)
+
+    # Persist transcript back into artifact record if transcribed
+    if final_state.get("transcription"):
+        await repo.update_artifact_transcript(inv_id, final_state["transcription"])
+
     saved_inv = await persist_investigation_state(repo, final_state)
     return map_investigation_to_response(saved_inv)
 
