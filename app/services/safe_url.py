@@ -41,6 +41,24 @@ BLOCKED_HOSTNAMES = {
     "localhost",
 }
 
+POPULAR_TARGET_BRANDS = {
+    "paypal", "apple", "google", "microsoft", "amazon", "netflix",
+    "chase", "wellsfargo", "bankofamerica", "citi", "irs", "usps",
+    "fedex", "dhl", "coinbase", "binance", "metamask", "facebook",
+    "instagram", "whatsapp", "telegram", "uber", "yahoo", "outlook",
+}
+
+HIGH_RISK_TLDS = {
+    "xyz", "top", "click", "club", "work", "rest", "cam", "live",
+    "support", "online", "site", "buzz", "guru", "fit", "tk", "ml", "ga", "cf"
+}
+
+SENSITIVE_PATH_KEYWORDS = [
+    "login", "signin", "verify", "verification", "account", "banking",
+    "secure", "wallet", "recover", "update", "password", "otp", "auth",
+]
+
+
 
 class URLValidationResult(BaseModel):
     is_safe: bool
@@ -125,11 +143,16 @@ class SafeURLInspector:
             try:
                 addr_info = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
             except socket.gaierror as e:
+                # An unresolvable domain cannot reach internal IPs (safe from SSRF),
+                # but has no reachable public IP. Allow investigation for threat analysis.
                 return URLValidationResult(
-                    is_safe=False,
+                    is_safe=True,
                     normalized_url=normalized,
                     hostname=hostname,
-                    reason=f"DNS resolution failed: {e}",
+                    resolved_ip=None,
+                    reason=f"Unresolvable domain or offline: {e}",
+                    domain=hostname,
+                    scheme=scheme,
                 )
 
             if not addr_info:
@@ -177,6 +200,72 @@ class SafeURLInspector:
             )
 
     @classmethod
+    def extract_domain_details(cls, raw_url: str) -> dict:
+        """Performs deep structural inspection of URL domain, subdomains, TLD, and spoofing cues."""
+        normalized = cls.normalize_url(raw_url)
+        parsed = urlparse(normalized)
+        hostname = (parsed.hostname or "").lower()
+
+        # Check if hostname is an IP address
+        is_ip = False
+        try:
+            ipaddress.ip_address(hostname)
+            is_ip = True
+        except ValueError:
+            pass
+
+        # Split domain parts
+        parts = hostname.split(".")
+        subdomains: list[str] = []
+        root_domain = hostname
+        tld = ""
+
+        # Handle 2-part ccTLDs like .co.uk, .com.au, .gov.in
+        two_part_cctlds = {"co.uk", "org.uk", "gov.uk", "ac.uk", "com.au", "net.au", "org.au", "co.in", "net.in", "co.nz", "co.za"}
+        if len(parts) >= 3 and f"{parts[-2]}.{parts[-1]}" in two_part_cctlds:
+            tld = f"{parts[-2]}.{parts[-1]}"
+            root_domain = f"{parts[-3]}.{tld}"
+            subdomains = parts[:-3]
+        elif len(parts) >= 2:
+            tld = parts[-1]
+            root_domain = f"{parts[-2]}.{tld}"
+            subdomains = parts[:-2]
+        else:
+            tld = parts[0] if parts else ""
+            root_domain = hostname
+
+        is_punycode = "xn--" in hostname
+        has_high_risk_tld = tld in HIGH_RISK_TLDS
+
+        # Brand in subdomain deception
+        subdomain_str = ".".join(subdomains).lower()
+        spoofed_brands = []
+        for brand in POPULAR_TARGET_BRANDS:
+            if brand in subdomain_str and brand not in root_domain.split(".")[0]:
+                spoofed_brands.append(brand)
+
+        # Sensitive path/query keywords
+        full_path_query = (parsed.path + "?" + parsed.query).lower()
+        path_keywords_found = [kw for kw in SENSITIVE_PATH_KEYWORDS if kw in full_path_query]
+
+        return {
+            "normalized_url": normalized,
+            "hostname": hostname,
+            "root_domain": root_domain,
+            "subdomains": subdomains,
+            "tld": tld,
+            "is_ip_address": is_ip,
+            "is_punycode": is_punycode,
+            "has_high_risk_tld": has_high_risk_tld,
+            "subdomain_brand_deception": bool(spoofed_brands),
+            "deceptive_brands_found": spoofed_brands,
+            "sensitive_path_keywords": path_keywords_found,
+            "scheme": parsed.scheme,
+            "port": parsed.port,
+            "path": parsed.path,
+        }
+
+    @classmethod
     async def fetch_head_or_preview(
         cls, url: str, max_redirects: int | None = None
     ) -> dict:
@@ -193,9 +282,12 @@ class SafeURLInspector:
             if not val_res.is_safe:
                 return {
                     "success": False,
+                    "initial_url": redirect_chain[0] if redirect_chain else url,
                     "final_url": current_url,
                     "error": f"Security check failed on hop {hop}: {val_res.reason}",
                     "redirect_chain": redirect_chain,
+                    "hops_count": len(redirect_chain),
+                    "is_cross_domain_redirect": False,
                 }
 
             redirect_chain.append(current_url)
@@ -214,16 +306,26 @@ class SafeURLInspector:
                         location = response.headers.get("Location")
                         if not location:
                             break
-                        # Handle relative redirects
-                        current_url = str(response.url.join(location))
+                        # Handle relative or absolute redirects
+                        from urllib.parse import urljoin
+                        current_url = urljoin(str(response.url), location)
                         continue
 
                     # Terminal response reached
                     content_preview = response.text[:2000] if response.text else ""
+                    first_host = urlparse(redirect_chain[0]).hostname
+                    final_host = urlparse(str(response.url)).hostname
+                    is_cross_domain = bool(first_host and final_host and first_host.lower() != final_host.lower())
+
                     return {
                         "success": True,
                         "status_code": response.status_code,
+                        "initial_url": redirect_chain[0],
                         "final_url": str(response.url),
+                        "hops_count": len(redirect_chain) - 1,
+                        "is_cross_domain_redirect": is_cross_domain,
+                        "server": response.headers.get("server"),
+                        "content_type": response.headers.get("content-type"),
                         "headers": dict(response.headers),
                         "content_preview": content_preview,
                         "redirect_chain": redirect_chain,
@@ -231,16 +333,25 @@ class SafeURLInspector:
 
             except Exception as e:
                 logger.warning(f"Failed safe fetch for '{current_url}': {e}")
+                first_host = urlparse(redirect_chain[0]).hostname if redirect_chain else None
+                curr_host = urlparse(current_url).hostname
+                is_cross = bool(first_host and curr_host and first_host.lower() != curr_host.lower())
                 return {
                     "success": False,
+                    "initial_url": redirect_chain[0] if redirect_chain else url,
                     "final_url": current_url,
+                    "hops_count": len(redirect_chain) - 1 if redirect_chain else 0,
+                    "is_cross_domain_redirect": is_cross,
                     "error": str(e),
                     "redirect_chain": redirect_chain,
                 }
 
         return {
             "success": False,
+            "initial_url": redirect_chain[0] if redirect_chain else url,
             "final_url": current_url,
+            "hops_count": len(redirect_chain) - 1,
+            "is_cross_domain_redirect": False,
             "error": f"Exceeded maximum redirects ({max_redirects})",
             "redirect_chain": redirect_chain,
         }

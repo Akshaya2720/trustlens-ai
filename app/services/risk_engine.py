@@ -138,6 +138,34 @@ class DeterministicRiskEngine:
                         score += 20.0
                         indicators.append("High-severity combination: Direct executable binary hosted on raw unindexed IP address.")
 
+            # Structural Domain & Subdomain Deception
+            if threat_intel.domain_analysis:
+                for u, da in threat_intel.domain_analysis.items():
+                    if isinstance(da, dict):
+                        if da.get("subdomain_brand_deception"):
+                            score += cls.WEIGHT_DOMAIN_IMPERSONATION
+                            brands = ", ".join(da.get("deceptive_brands_found", []))
+                            indicators.append(
+                                f"Deceptive Subdomain Impersonation: Target brand(s) '{brands}' detected in subdomain "
+                                f"of unrelated root domain '{da.get('root_domain')}'."
+                            )
+                        if da.get("has_high_risk_tld") and (da.get("sensitive_path_keywords") or da.get("subdomain_brand_deception")):
+                            score += 15.0
+                            indicators.append(f"Abuse-prone TLD (.{da.get('tld')}) paired with sensitive credential keywords.")
+
+            # Redirect Chain Inspection
+            if threat_intel.redirect_analysis:
+                for u, ra in threat_intel.redirect_analysis.items():
+                    if isinstance(ra, dict):
+                        if ra.get("is_cross_domain_redirect"):
+                            score += 20.0
+                            indicators.append(f"Cross-Domain Redirect: {ra.get('initial_url')} redirects across domain boundaries to {ra.get('final_url')}.")
+
+            # Provider Disagreements
+            if threat_intel.provider_disagreements:
+                for d in threat_intel.provider_disagreements:
+                    contradictions.append(f"Threat Intelligence Disagreement: {d}")
+
 
 
         # 4. Claim Verification (Fact Checking)
@@ -197,14 +225,22 @@ class DeterministicRiskEngine:
 
         evidence_coverage = (successful_checks / max(1, total_checks))
 
+        # Check if this investigation evaluates URLs
+        is_url_eval = any(ev.query_type == "url" for ev in evidence_records) or (threat_intel and bool(threat_intel.checked_urls))
+        has_any_verified_url_check = any(ev.query_type == "url" and ev.status in (ProviderStatus.OK, ProviderStatus.CONFIRMED_MATCH, ProviderStatus.NO_MATCH) for ev in evidence_records)
+        unverified_url_investigation = is_url_eval and not has_any_verified_url_check
+
+        if unverified_url_investigation:
+            limitations.append("URL reputation could not be verified by external threat providers. An unlisted or unknown URL cannot be classified as safe.")
+
         if score >= cls.THRESHOLD_CRITICAL:
             risk_level = "critical"
         elif score >= cls.THRESHOLD_HIGH:
             risk_level = "high"
         elif score >= cls.THRESHOLD_MEDIUM:
             risk_level = "medium"
-        elif total_checks > 0 and score < cls.THRESHOLD_MEDIUM and not has_confirmed_malicious:
-            # Low risk requires clean checks without ambiguity
+        elif total_checks > 0 and score < cls.THRESHOLD_MEDIUM and not has_confirmed_malicious and not unverified_url_investigation:
+            # Low risk requires clean checks without ambiguity or unverified status
             risk_level = "low"
         else:
             risk_level = "unknown"

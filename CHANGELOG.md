@@ -5,6 +5,17 @@ All notable changes to TrustLens AI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - Phase 4 Milestone: Advanced URL & Domain Threat Intelligence Engine
+
+### Added
+- Dedicated URL investigation capability with concurrent multi-provider threat intelligence (`VirusTotal`, `PhishTank`, `URLhaus`).
+- Deep domain analysis in `SafeURLInspector.extract_domain_details(url)`: root domain extraction, subdomain hierarchy, Punycode/IDN homograph attack detection, abuse-prone TLD detection (`.top`, `.xyz`, etc.), raw IP host flagging, and brand-in-subdomain spoofing detection (`paypal.com-verification.org`, `apple.security-alert.net`, etc.).
+- Hardened SSRF & redirect chain inspection in `SafeURLInspector.fetch_head_or_preview`: per-hop IP validation against private/loopback/cloud-metadata networks (AWS/GCP/Azure 169.254.169.254), cross-domain redirect hop detection, server header extraction, and bounded content preview (<2MB) without execution.
+- Multi-provider disagreement detection in `ThreatIntelligenceAgent`, recording conflicting verdicts and flagging domain anomalies.
+- Explicit unverified URL safety policy in `DeterministicRiskEngine`: unverified or unknown URLs are NEVER classified as safe/low risk (`risk_level == "unknown"`).
+- Added domain spoofing risk weights (+35.0), cross-domain redirect risk weights (+20.0), and provider contradiction tracking to deterministic risk engine.
+- Comprehensive Phase 4 test suite (`tests/test_phase4_url_intelligence.py` - 13 tests) verifying domain spoofing, homographs, private IP SSRF blocking, redirect tracking, multi-provider aggregation, and unverified URL policies.
+
 ## [1.2.0] - Phase 3 Milestone: Real Audio & Voice-Note Investigation
 
 ### Added

@@ -63,6 +63,10 @@ class ThreatIntelligenceOutput(BaseModel):
     any_malicious_detected: bool = False
     phishing_detected: bool = False
     malware_detected: bool = False
+    provider_consensus: str = "clean"  # confirmed_malware, confirmed_phishing, malicious, disagreement, clean, unknown
+    provider_disagreements: List[str] = Field(default_factory=list)
+    domain_analysis: Dict[str, Any] = Field(default_factory=dict)
+    redirect_analysis: Dict[str, Any] = Field(default_factory=dict)
     summary: str = ""
 
 
