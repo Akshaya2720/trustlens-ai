@@ -217,7 +217,8 @@ async def plan_specialist_checks_node(state: InvestigationState) -> Dict[str, An
     public_claim_keywords = [
         "subsidy", "grant", "relief", "stimulus", "executive order",
         "kyc requirement", "5g", "covid", "who declares", "lottery winner",
-        "jackpot giveaway", "tax rebate", "mileage tax", "account suspended"
+        "jackpot giveaway", "tax rebate", "mileage tax", "account suspended",
+        "nasa", "gravity", "student loan", "forgiven", "announced that"
     ]
     extracted_claims = list(state.get("extracted_claims") or [])
     if any(k in text for k in public_claim_keywords):

@@ -222,6 +222,7 @@ class InvestigationRepository:
         contradictions: List[str],
         recommendations: List[str],
         limitations: List[str],
+        score_breakdown: Optional[Dict[str, float]] = None,
     ) -> RiskAssessment:
         ra = RiskAssessment(
             investigation_id=investigation_id,
@@ -232,6 +233,7 @@ class InvestigationRepository:
             contradictions=contradictions,
             recommendations=recommendations,
             limitations=limitations,
+            score_breakdown=score_breakdown or {},
         )
         self.db.add(ra)
         await self.db.flush()
@@ -284,7 +286,13 @@ class InvestigationRepository:
                 job.finished_at = datetime.now(timezone.utc)
             await self.db.flush()
 
-    async def log_audit_event(self, investigation_id: str, event_type: str, actor: str = "system", details: Optional[Dict[str, Any]] = None) -> AuditEvent:
+    async def log_audit_event(
+        self,
+        investigation_id: Optional[str] = None,
+        event_type: str = "general_event",
+        actor: str = "system",
+        details: Optional[Dict[str, Any]] = None,
+    ) -> AuditEvent:
         evt = AuditEvent(
             investigation_id=investigation_id,
             event_type=event_type,

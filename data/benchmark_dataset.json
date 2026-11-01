@@ -94,5 +94,53 @@
     "source_dataset": "Neutral Communication Benchmark",
     "license": "Public Domain",
     "retrieval_date": "2026-10-27"
+  },
+  {
+    "id": "BENCH-009",
+    "type": "claim",
+    "content": "IRS announces all federal student loans are completely forgiven starting tomorrow without any application required.",
+    "ground_truth_label": "misinformation",
+    "expected_risk_level": "high",
+    "category": "potential_misinformation",
+    "observable_features": ["IRS", "student loans", "completely forgiven"],
+    "source_dataset": "Fact Check Misinformation Corpus",
+    "license": "CC-BY-4.0",
+    "retrieval_date": "2026-11-01"
+  },
+  {
+    "id": "BENCH-010",
+    "type": "text",
+    "content": "Your package delivery was unsuccessful. Click https://usps.com.tracking-portal-support.xyz/status to schedule redelivery.",
+    "ground_truth_label": "phishing",
+    "expected_risk_level": "high",
+    "category": "phishing_and_malicious_links",
+    "observable_features": ["usps.com.tracking-portal-support.xyz", "package delivery", "schedule redelivery"],
+    "source_dataset": "SMS Phishing Corpus",
+    "license": "MIT",
+    "retrieval_date": "2026-11-01"
+  },
+  {
+    "id": "BENCH-011",
+    "type": "text",
+    "content": "Voice recording transcript: Hello this is Officer Davis from the County Sheriff Department. Your social security number was found in a suspicious vehicle. Transfer $2,500 immediately to avoid arrest.",
+    "ground_truth_label": "scam",
+    "expected_risk_level": "critical",
+    "category": "financial_scams",
+    "observable_features": ["County Sheriff", "$2,500", "avoid arrest", "social security number"],
+    "source_dataset": "Voice Note Threat Benchmark",
+    "license": "CC0-1.0",
+    "retrieval_date": "2026-11-01"
+  },
+  {
+    "id": "BENCH-012",
+    "type": "text",
+    "content": "Team, reminder that our weekly all-hands meeting starts at 10 AM on Zoom. Please review the quarterly review notes beforehand.",
+    "ground_truth_label": "benign",
+    "expected_risk_level": "low",
+    "category": "unclear_or_insufficient_evidence",
+    "observable_features": ["all-hands meeting", "quarterly review notes"],
+    "source_dataset": "Corporate Communication Benchmark",
+    "license": "MIT",
+    "retrieval_date": "2026-11-01"
   }
 ]

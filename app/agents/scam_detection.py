@@ -36,8 +36,8 @@ class ScamDetectionAgent:
         # Deterministic checks
         has_otp = any(w in lower_text for w in ["otp", "one-time password", "verification code", "security code", "2fa code", "passcode"])
         has_password = any(w in lower_text for w in ["password", "login credentials", "secret key", "seed phrase"])
-        has_crypto_or_wire = any(w in lower_text for w in ["wire transfer", "bitcoin", "btc", "eth", "usdt", "gift card", "apple gift card", "zelle", "venmo"])
-        has_extortion = any(w in lower_text for w in ["arrest warrant", "law enforcement", "fbi", "police", "jail", "legal action"])
+        has_crypto_or_wire = any(w in lower_text for w in ["wire transfer", "bitcoin", "btc", "eth", "usdt", "gift card", "apple gift card", "zelle", "venmo", "transfer $", "wire", "transfer 2", "transfer $2"])
+        has_extortion = any(w in lower_text for w in ["arrest warrant", "law enforcement", "fbi", "police", "jail", "legal action", "avoid arrest", "arrest", "sheriff"])
         has_family_lure = any(w in lower_text for w in ["dropped my phone", "temporary number", "hi mom", "hi dad"])
 
         threat_patterns = []

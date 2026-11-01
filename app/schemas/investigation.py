@@ -35,6 +35,9 @@ class QuestionResponse(BaseModel):
     answer: str
     grounded_in_evidence: bool = True
     referenced_evidence_ids: List[str] = Field(default_factory=list)
+    confidence: float = Field(1.0, ge=0.0, le=1.0, description="Confidence in the evidentiary backing of the response")
+    groundedness_assessment: str = Field("fully_grounded", description="Assessment of evidence backing: 'fully_grounded', 'partially_grounded', or 'unsupported'")
+    missing_information_notice: Optional[str] = Field(None, description="Explicit disclaimer if requested information was absent or unverified in evidence")
 
 
 class InvestigationStatusResponse(BaseModel):

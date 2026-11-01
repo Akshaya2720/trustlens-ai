@@ -41,6 +41,12 @@ app = FastAPI(
     openapi_url="/openapi.json",
 )
 
+from app.core.rate_limit import RateLimitMiddleware, SecurityHeadersMiddleware
+
+# Security & Operational Middlewares (Phase 10)
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(RateLimitMiddleware)
+
 # CORS Middleware
 app.add_middleware(
     CORSMiddleware,

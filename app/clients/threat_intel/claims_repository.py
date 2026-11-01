@@ -88,6 +88,28 @@ VERIFIED_PUBLIC_CLAIMS = [
         "url": "https://www.snopes.com/fact-check/lottery-winner-donation-scam",
         "review_date": "2023-11-18",
     },
+    {
+        "keywords": ["nasa", "gravity", "earth's gravity", "decrease by 50%", "planetary alignment"],
+        "claim_text": "NASA officially announced that Earth's gravity will temporarily decrease by 50% due to planetary alignment.",
+        "claimant": "Viral social media hoax (Zero Gravity Day)",
+        "verdict_category": "false",
+        "textual_rating": "False - Long-running viral internet hoax; planetary alignment has negligible gravitational impact",
+        "publisher_name": "Snopes & NASA",
+        "publisher_site": "snopes.com",
+        "url": "https://www.snopes.com/fact-check/zero-gravity-day",
+        "review_date": "2024-01-15",
+    },
+    {
+        "keywords": ["student loans", "loan forgiveness", "completely forgiven", "irs announces", "debt cancelled"],
+        "claim_text": "IRS or government announces all federal student loans are completely forgiven starting tomorrow with no application required.",
+        "claimant": "Viral disinformation posts",
+        "verdict_category": "false",
+        "textual_rating": "False - No universal immediate executive loan cancellation without federal application process; IRS does not manage federal student loans",
+        "publisher_name": "Reuters Fact Check",
+        "publisher_site": "reuters.com",
+        "url": "https://www.reuters.com/fact-check/student-loan-universal-forgiveness-hoax",
+        "review_date": "2024-05-10",
+    },
 ]
 
 

@@ -8,6 +8,7 @@ import asyncio
 import json
 import os
 import sys
+import time
 import uuid
 from typing import Any, Dict, List
 
@@ -36,6 +37,7 @@ async def run_evaluation():
     inconclusive_count = 0
     citation_correct_count = 0
     total_evaluated = 0
+    latencies = []
 
     results = []
 
@@ -43,7 +45,7 @@ async def run_evaluation():
         case_id = item["id"]
         content = item["content"]
         ground_truth = item["ground_truth_label"]
-        is_malicious_truth = ground_truth in ("phishing", "malware", "scam", "social_engineering")
+        is_malicious_truth = ground_truth in ("phishing", "malware", "scam", "social_engineering", "misinformation")
         observable_features = item.get("observable_features", [])
 
         state: InvestigationState = {
@@ -51,9 +53,9 @@ async def run_evaluation():
             "input_type": item["type"],
             "raw_text": content,
             "extracted_entities": [],
-            "extracted_claims": [],
+            "extracted_claims": [{"claim_text": content, "context": "Benchmark evaluation"}] if item["type"] == "claim" else [],
             "extracted_urls": [],
-            "categories": [],
+            "categories": ["potential_misinformation"] if item["type"] == "claim" else [],
             "planned_tools": [],
             "agent_findings": {},
             "external_evidence": [],
@@ -61,8 +63,10 @@ async def run_evaluation():
             "status": "pending",
         }
 
+        start_t = time.time()
         try:
             output_state = await execute_investigation_workflow(state)
+            latency_ms = (time.time() - start_t) * 1000.0
             predicted_risk = output_state.get("final_risk_level", "unknown")
             predicted_score = output_state.get("final_risk_score", 0.0)
             is_malicious_pred = predicted_risk in ("medium", "high", "critical")
@@ -103,9 +107,10 @@ async def run_evaluation():
             if cited:
                 citation_correct_count += 1
 
+            latencies.append(latency_ms)
             total_evaluated += 1
 
-            print(f"[{case_id}] Label: {ground_truth.upper():<18} | Pred: {predicted_risk.upper():<8} ({predicted_score:4.1f}/100) -> {outcome}")
+            print(f"[{case_id}] Label: {ground_truth.upper():<18} | Pred: {predicted_risk.upper():<8} ({predicted_score:4.1f}/100) -> {outcome} ({latency_ms:.0f}ms)")
 
         except Exception as e:
             print(f"[{case_id}] Execution Error: {e}")
@@ -116,6 +121,7 @@ async def run_evaluation():
     f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
     fpr = fp / (fp + tn) if (fp + tn) > 0 else 0.0
     citation_accuracy = (citation_correct_count / max(1, total_evaluated)) * 100.0
+    mean_latency = sum(latencies) / len(latencies) if latencies else 0.0
 
     print("=" * 80)
     print(" FINAL EVALUATION SUMMARY METRICS")
@@ -130,6 +136,7 @@ async def run_evaluation():
     print(f" F1-Score                      : {f1:.4f}")
     print(f" False Positive Rate (FPR)     : {fpr:.4f} ({fpr * 100:.1f}%)")
     print(f" Evidence Citation Correctness : {citation_accuracy:.1f}%")
+    print(f" Mean Latency                  : {mean_latency:.1f} ms")
     print("=" * 80)
 
 

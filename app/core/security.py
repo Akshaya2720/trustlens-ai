@@ -103,6 +103,45 @@ def detect_prompt_injection(text: str) -> List[str]:
     return matches
 
 
+# PII Patterns for redaction
+PII_CARD_PATTERN = re.compile(r"\b(?:\d[ -]*?){13,19}\b")
+PII_SSN_PATTERN = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
+PII_EMAIL_PATTERN = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
+
+
+def redact_pii(text: str, mask_emails: bool = False) -> str:
+    """Redacts high-risk PII such as credit card numbers and SSNs from logs, previews, and audit records."""
+    if not text:
+        return text
+
+    def luhn_check(num_str: str) -> bool:
+        digits = [int(c) for c in num_str if c.isdigit()]
+        if len(digits) not in (13, 15, 16, 19):
+            return False
+        checksum = 0
+        reverse_digits = digits[::-1]
+        for i, digit in enumerate(reverse_digits):
+            if i % 2 == 1:
+                doubled = digit * 2
+                checksum += doubled - 9 if doubled > 9 else doubled
+            else:
+                checksum += digit
+        return checksum % 10 == 0
+
+    def mask_card(m):
+        raw = m.group(0)
+        digits_only = re.sub(r"\D", "", raw)
+        if len(digits_only) in (13, 15, 16, 19) and luhn_check(digits_only):
+            return "[REDACTED_CARD]"
+        return raw
+
+    redacted = PII_CARD_PATTERN.sub(mask_card, text)
+    redacted = PII_SSN_PATTERN.sub("[REDACTED_SSN]", redacted)
+    if mask_emails:
+        redacted = PII_EMAIL_PATTERN.sub("[REDACTED_EMAIL]", redacted)
+    return redacted
+
+
 def validate_image_bytes(
     data: bytes,
     allowed_types: Optional[List[str]] = None,

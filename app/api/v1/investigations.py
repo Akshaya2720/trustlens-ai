@@ -11,7 +11,7 @@ from app.api.deps import get_repository
 from app.clients.meta_client import meta_client
 from app.core.config import settings
 from app.core.logging import logger
-from app.core.security import compute_sha256, validate_audio_bytes, validate_image_bytes, verify_api_key
+from app.core.security import compute_sha256, redact_pii, validate_audio_bytes, validate_image_bytes, verify_api_key
 from app.db.models import Investigation
 from app.db.repository import InvestigationRepository
 from app.orchestration.graph import execute_investigation_workflow
@@ -29,6 +29,7 @@ from app.schemas.investigation import (
     TextInvestigationRequest,
     URLInvestigationRequest,
 )
+from app.services.evidence_qa import EvidenceQAService
 from app.services.safe_url import SafeURLInspector
 
 router = APIRouter(prefix="/investigations", tags=["Investigations"])
@@ -257,6 +258,7 @@ async def persist_investigation_state(
         contradictions=ra.get("contradictions", []),
         recommendations=ra.get("recommendations", []),
         limitations=ra.get("limitations", []),
+        score_breakdown=ra.get("score_breakdown", {}),
     )
 
     # Update primary investigation record
@@ -296,7 +298,7 @@ async def investigate_text(
     await repo.create_investigation(
         investigation_id=inv_id,
         input_type="text",
-        raw_input_preview=payload.text,
+        raw_input_preview=redact_pii(payload.text),
         model_id=settings.META_MODEL_ID,
     )
 
@@ -407,7 +409,7 @@ async def investigate_claim(
     await repo.create_investigation(
         investigation_id=inv_id,
         input_type="claim",
-        raw_input_preview=claim_text[:500],
+        raw_input_preview=redact_pii(claim_text[:500]),
         model_id=settings.META_MODEL_ID,
     )
 
@@ -814,7 +816,7 @@ async def answer_investigation_question(
 ):
     """Answers a user inquiry strictly using the existing evidence and audit records of the investigation.
 
-    Never invents unverified claims or assumes unperformed checks.
+    Phase 9: Strict grounding, explicit evidence citations, confidence calibration, and absence disclaimers.
     """
     inv = await repo.get_investigation(investigation_id)
     if not inv:
@@ -823,59 +825,19 @@ async def answer_investigation_question(
             detail=f"Investigation with ID '{investigation_id}' not found.",
         )
 
-    # Build grounded evidentiary context
-    evidence_text = f"Investigation ID: {inv.id}\n"
-    evidence_text += f"Final Risk Level: {inv.final_risk_level} (Score: {inv.final_risk_score}/100, Confidence: {inv.confidence})\n"
-    evidence_text += f"Summary: {inv.summary}\n"
-
-    if inv.risk_assessment:
-        evidence_text += f"Indicators: {inv.risk_assessment.indicators}\n"
-        evidence_text += f"Contradictions: {inv.risk_assessment.contradictions}\n"
-        evidence_text += f"Limitations: {inv.risk_assessment.limitations}\n"
-
-    ev_ids = []
-    for ev in inv.external_evidence:
-        ev_ids.append(ev.id)
-        evidence_text += (
-            f"Provider: {ev.provider_name} | Query: {ev.query_target} | Status: {ev.raw_status} | "
-            f"Malicious: {ev.is_malicious} | Detail: {ev.threat_description}\n"
-        )
-
-    system_prompt = (
-        "You are TrustLens AI Evidence Assistant.\n"
-        "Answer the user's question STRICTLY based on the provided investigation record and evidence below.\n"
-        "MANDATORY CONSTRAINTS:\n"
-        "1. Do NOT invent facts or claim to have checked external sources that are not in the record.\n"
-        "2. If the user asks about an aspect that was not investigated or is not in the evidence, "
-        "explicitly answer: 'That aspect was not part of the executed investigation checks.'\n"
-        "3. Keep answers factual, concise, and safety-oriented."
+    qa_output = await EvidenceQAService.answer_question(
+        inv=inv,
+        question=payload.question,
+        meta_client=meta_client,
     )
-
-    if meta_client.is_configured:
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {
-                "role": "user",
-                "content": f"EVIDENCE RECORD:\n{evidence_text}\n\nUSER QUESTION: {payload.question}",
-            },
-        ]
-        try:
-            resp = await meta_client.generate_reasoning(messages=messages, temperature=0.1)
-            answer_text = resp.content.strip()
-        except Exception as e:
-            answer_text = f"Unable to generate model response: {str(e)}"
-    else:
-        answer_text = (
-            f"Based on stored records for investigation {inv.id}:\n"
-            f"Risk Level: {inv.final_risk_level.upper()} (Score: {inv.final_risk_score}).\n"
-            f"Summary: {inv.summary}\n"
-            f"Evidence records available: {len(inv.external_evidence)} items."
-        )
 
     return QuestionResponse(
         investigation_id=inv.id,
         question=payload.question,
-        answer=answer_text,
-        grounded_in_evidence=True,
-        referenced_evidence_ids=ev_ids,
+        answer=qa_output.answer,
+        grounded_in_evidence=qa_output.grounded_in_evidence,
+        referenced_evidence_ids=qa_output.referenced_evidence_ids,
+        confidence=qa_output.confidence,
+        groundedness_assessment=qa_output.groundedness_assessment,
+        missing_information_notice=qa_output.missing_information_notice,
     )

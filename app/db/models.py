@@ -163,6 +163,7 @@ class RiskAssessment(Base):
     contradictions = Column(JSON, default=list)
     recommendations = Column(JSON, default=list)
     limitations = Column(JSON, default=list)
+    score_breakdown = Column(JSON, default=dict)
     generated_at = Column(DateTime(timezone=True), default=utc_now)
 
     investigation = relationship("Investigation", back_populates="risk_assessment")
@@ -187,7 +188,7 @@ class AuditEvent(Base):
     __tablename__ = "audit_events"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    investigation_id = Column(String(36), ForeignKey("investigations.id", ondelete="CASCADE"), nullable=False, index=True)
+    investigation_id = Column(String(36), ForeignKey("investigations.id", ondelete="CASCADE"), nullable=True, index=True)
     event_type = Column(String(64), nullable=False, index=True)
     actor = Column(String(64), default="system")
     details_json = Column(JSON, default=dict)

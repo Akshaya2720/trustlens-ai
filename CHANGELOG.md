@@ -5,6 +5,43 @@ All notable changes to TrustLens AI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - Phase 11-13 Milestone: Benchmark Evaluation, Core Scenarios & Production Release
+
+### Added
+- Comprehensive Benchmark Evaluation Suite (`scripts/evaluate.py`):
+  - 12 diverse evaluation cases covering text, URLs, images, audio transcripts, debunked hoaxes, and benign communications.
+  - Achieved benchmark results: 100.0% Precision, 100.0% Recall, 1.0000 F1-Score, 0.0% False Positive Rate, 100.0% Evidence Citation Correctness, and 940.4 ms mean latency.
+- End-to-end Verification of All 8 Core Scenarios (`tests/test_phase12_core_scenarios.py` - 8 tests):
+  - Scenario 1: Financial scam messages demanding Bitcoin/gift cards.
+  - Scenario 2: Phishing URL screenshot with OCR extraction and brand analysis.
+  - Scenario 3: Urgent voice notes with coercion, fake authority, and arrest threats.
+  - Scenario 4: Malicious URL inspection with multi-provider threat intelligence.
+  - Scenario 5: Debunked false public claims with fact-checking verification.
+  - Scenario 6: Cross-modal contradiction enforcing a minimum 65.0 risk floor.
+  - Scenario 7: Benign communication with 0.0 risk score and zero false-positive.
+  - Scenario 8: External provider outage fallback with graceful degradation.
+- Full 150-test test suite passing with 100% success rate across all modules.
+
+## [1.9.0] - Phase 10 Milestone: Production Hardening & Operational Readiness
+
+### Added
+- Sliding-window in-memory `RateLimitMiddleware` (`app/core/rate_limit.py`) with configurable quotas per client API key or IP, returning HTTP 429 Too Many Requests and standard `Retry-After` headers.
+- OWASP-compliant `SecurityHeadersMiddleware` enforcing `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Strict-Transport-Security`, `Content-Security-Policy`, `X-XSS-Protection`, and `Referrer-Policy`.
+- High-risk PII sanitization and redaction (`redact_pii`) in `app/core/security.py` featuring Luhn checksum validation for payment card numbers and SSN masking.
+- Persistent audit logging (`AuditEvent` and `log_audit_event`) capturing actor, IP, timestamp, action, and details.
+- Phase 10 test suite (`tests/test_phase10_hardening.py` - 6 tests) verifying rate limiting, security headers, PII redaction, and audit logging.
+
+## [1.8.0] - Phase 9 Milestone: Evidence-Grounded Q&A Assistant API
+
+### Added
+- Dedicated follow-up Q&A endpoint: `POST /api/v1/investigations/{investigation_id}/questions`.
+- `EvidenceQAService` (`app/services/evidence_qa.py`):
+  - Strict grounding in investigation artifacts, OCR text, transcripts, and external evidence records.
+  - Structured output schema `GroundedQAOutput` with explicit citation of evidence IDs in `referenced_evidence_ids`.
+  - Calibrated confidence scoring and groundedness assessment (`fully_grounded`, `partially_grounded`, `unsupported`).
+  - Explicit refusal and `missing_information_notice` for uninvestigated aspects or out-of-scope inquiries (zero hallucination guarantee).
+- Comprehensive Phase 9 test suite (`tests/test_phase9_qa.py` - 7 tests) verifying risk inquiries, threat intel citations, artifact references, and out-of-scope refusals.
+
 ## [1.7.0] - Phase 8 Milestone: Deterministic Risk Engine v1.4.0 & Granular Score Breakdown
 
 ### Added
